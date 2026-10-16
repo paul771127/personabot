@@ -154,3 +154,16 @@ def test_history_must_start_with_user():
 )
 def test_parse_facts(raw, expected):
     assert _parse_facts(raw) == expected
+
+
+def test_overlong_facts_are_truncated():
+    """小模型偶爾把整段回覆當成事實吐回來;那段垃圾不能永久留在記憶裡。"""
+    from personabot.brain import MAX_FACT_CHARS
+
+    facts = _parse_facts("- " + "細節很多。" * 40)
+    assert len(facts) == 1
+    assert len(facts[0]) == MAX_FACT_CHARS
+
+
+def test_normal_length_facts_are_untouched():
+    assert _parse_facts("- 他叫阿明,在台中念資工") == ["他叫阿明,在台中念資工"]

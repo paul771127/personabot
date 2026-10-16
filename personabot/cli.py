@@ -4,6 +4,7 @@
     python -m personabot.cli --persona personas/aoi.yaml
     python -m personabot.cli --telegram        # 用 long polling 真的接上 Telegram
     python -m personabot.cli --selftest        # 一次驗完五個環節,看哪裡沒通
+    python -m personabot.cli --smoke           # 跑腳本對話,挑出小模型常見的毛病
 """
 
 from __future__ import annotations
@@ -208,6 +209,7 @@ def main() -> None:
     parser.add_argument("--persona", help="角色卡路徑,預設讀 PERSONA_PATH")
     parser.add_argument("--telegram", action="store_true", help="用 long polling 接上 Telegram")
     parser.add_argument("--selftest", action="store_true", help="驗完五個環節就離開")
+    parser.add_argument("--smoke", action="store_true", help="跑一段腳本對話並檢查常見毛病")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
 
@@ -227,6 +229,11 @@ def main() -> None:
 
     persona = Persona.load(args.persona) if args.persona else Persona.load(settings.persona_path)
     engine = Engine(settings=settings, persona=persona)
+
+    if args.smoke:
+        from .smoke import run_smoke
+
+        sys.exit(asyncio.run(run_smoke(engine)))
 
     if args.telegram:
         asyncio.run(run_telegram(engine))

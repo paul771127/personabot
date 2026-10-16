@@ -305,11 +305,16 @@ def _transcript(messages: list[Message]) -> str:
     return "\n".join(f"{'對方' if m.role == 'user' else '你'}:{m.text}" for m in messages)
 
 
+# 長期記憶會跟著每一次請求送出去,所以單筆要有上限。小模型偶爾會把整段回覆
+# 當成「事實」吐回來,沒擋的話那段垃圾會永遠留在記憶裡,拖垮之後每一次對話。
+MAX_FACT_CHARS = 120
+
+
 def _parse_facts(raw: str) -> list[str]:
     facts: list[str] = []
     for line in raw.splitlines():
         line = re.sub(r"^\s*[-*•]\s*|^\s*\d+[.)]\s*", "", line).strip()
         if not line or line in {"無", "(無)", "沒有", "none", "None"}:
             continue
-        facts.append(line)
+        facts.append(line[:MAX_FACT_CHARS])
     return facts[:5]
