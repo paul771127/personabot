@@ -32,6 +32,35 @@ def _bool(key: str, default: bool) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _backend() -> str:
+    """anthropic(預設)或 local(Ollama 等 OpenAI 相容伺服器)。"""
+    value = _env("LLM_BACKEND", "anthropic").lower()
+    return value if value in {"anthropic", "local"} else "anthropic"
+
+
+def _default_chat_model() -> str:
+    fallback = "qwen3.5:9b-q8_0" if _backend() == "local" else "claude-opus-5-5"
+    return _env("CHAT_MODEL", fallback)
+
+
+def _default_utility_model() -> str:
+    fallback = "qwen3.5:2b" if _backend() == "local" else "claude-haiku-5-5"
+    return _env("UTILITY_MODEL", fallback)
+
+
+@dataclass(frozen=True)
+class LocalConfig:
+    """本地模型伺服器。Ollama、LM Studio、llama.cpp、vLLM 都講 OpenAI 那套。"""
+
+    base_url: str = field(
+        default_factory=lambda: _env("LOCAL_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+    )
+    # Ollama 不檢查金鑰,但有些伺服器會要,所以還是帶上。
+    api_key: str = field(default_factory=lambda: _env("LOCAL_API_KEY", "ollama"))
+    # 本地模型慢,預設給兩分鐘。
+    timeout: float = field(default_factory=lambda: _float("LOCAL_TIMEOUT", 120.0))
+
+
 @dataclass(frozen=True)
 class LineConfig:
     channel_secret: str = field(default_factory=lambda: _env("LINE_CHANNEL_SECRET"))
@@ -73,10 +102,11 @@ class Settings:
     )
     db_path: Path = field(default_factory=lambda: Path(_env("DB_PATH", "data/personabot.db")))
 
+    backend: str = field(default_factory=_backend)
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
-    chat_model: str = field(default_factory=lambda: _env("CHAT_MODEL", "claude-opus-5-5"))
-    # 摘要、抽取記憶這種背景雜事用便宜的模型就夠。
-    utility_model: str = field(default_factory=lambda: _env("UTILITY_MODEL", "claude-haiku-5-5"))
+    chat_model: str = field(default_factory=_default_chat_model)
+    # 摘要、抽取記憶這種背景雜事用小模型就夠。
+    utility_model: str = field(default_factory=_default_utility_model)
     chat_effort: str = field(default_factory=lambda: _env("CHAT_EFFORT", "low"))
     max_tokens: int = field(default_factory=lambda: _int("MAX_TOKENS", 1024))
 
@@ -94,6 +124,7 @@ class Settings:
     # 防呆:同一個人短時間連續丟訊息的上限
     rate_limit_per_minute: int = field(default_factory=lambda: _int("RATE_LIMIT_PER_MINUTE", 20))
 
+    local: LocalConfig = field(default_factory=LocalConfig)
     line: LineConfig = field(default_factory=LineConfig)
     messenger: MessengerConfig = field(default_factory=MessengerConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
@@ -116,8 +147,11 @@ def reset_settings() -> None:
     _settings = None
 
 
-def missing_credentials() -> str:
+def missing_credentials(settings: Settings | None = None) -> str:
     """沒有可用的模型憑證時回傳一段人話,有的話回空字串。"""
+    settings = settings or get_settings()
+    if settings.backend == "local":
+        return ""  # 本地伺服器不用金鑰;連不連得上由 --selftest 驗
     if _env("ANTHROPIC_API_KEY") or _env("ANTHROPIC_AUTH_TOKEN"):
         return ""
     return (

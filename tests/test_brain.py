@@ -11,7 +11,7 @@ import anthropic
 import httpx2
 import pytest
 
-from personabot.brain import Brain, _parse_facts, _to_api_messages
+from personabot.brain import AnthropicBackend, Brain, _parse_facts, _to_api_messages
 from personabot.store import Message
 
 
@@ -44,7 +44,7 @@ def brain_with_transport(settings, captured):
             api_key="test-key",
             http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         )
-        return Brain(settings, client=client)
+        return Brain(settings, AnthropicBackend(settings, client=client))
 
     return make
 

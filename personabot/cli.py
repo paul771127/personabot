@@ -106,11 +106,16 @@ async def selftest(settings: Settings, persona_path: str | None) -> int:
         return 1
     _report("資料庫", True, str(settings.db_path))
 
-    # 3. 金鑰
-    problem = missing_credentials()
-    if not _report("模型金鑰", not problem, problem.replace("\n", " ") if problem else "已設定"):
-        print("\n金鑰沒設,後面兩項沒辦法驗。")
-        return 1
+    # 3. 後端:雲端看金鑰,本地看伺服器與模型有沒有拉下來
+    print(f"\n  後端:{settings.backend}")
+    if settings.backend == "local":
+        if not await _check_local(settings):
+            return 1
+    else:
+        problem = missing_credentials(settings)
+        if not _report("模型金鑰", not problem, problem.replace("\n", " ") if problem else "已設定"):
+            print("\n金鑰沒設,後面兩項沒辦法驗。")
+            return 1
 
     # 4. 真的打一次 API
     engine = Engine(settings=settings, persona=persona, store=store)
@@ -124,7 +129,10 @@ async def selftest(settings: Settings, persona_path: str | None) -> int:
         reply = await engine.brain.chat(persona=persona, history=_probe_history(probe_msg.text))
     except Exception as exc:  # 連線失敗的原因要原汁原味給使用者
         _report("模型連線", False, f"{type(exc).__name__}: {exc}")
-        print("\n常見原因:金鑰打錯、額度用完、或這台機器連不出去。")
+        if settings.backend == "local":
+            print("\n常見原因:模型還沒 pull、記憶體不夠被 OOM、或回應超過 LOCAL_TIMEOUT 秒。")
+        else:
+            print("\n常見原因:金鑰打錯、額度用完、或這台機器連不出去。")
         return 1
     _report("模型連線", True, f"{settings.chat_model} 回了:{reply[:40]}")
 
@@ -141,6 +149,43 @@ async def selftest(settings: Settings, persona_path: str | None) -> int:
     print(f"\n  {persona.name} 說:{conv_reply.text}")
     print("\n全部通過。可以直接 python -m personabot.cli 開始聊了。")
     return 0 if memory_ok else 1
+
+
+async def _check_local(settings: Settings) -> bool:
+    """本地後端:伺服器活著嗎?要用的模型拉下來了嗎?"""
+    import httpx
+
+    url = settings.local.base_url
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{url}/models", headers={"Authorization": f"Bearer {settings.local.api_key}"}
+            )
+    except httpx.HTTPError as exc:
+        _report("本地伺服器", False, f"{url} 連不上:{exc}")
+        print("\n先把伺服器開起來:ollama serve(LM Studio 則是打開 Local Server 分頁)。")
+        return False
+
+    if response.status_code >= 400:
+        _report("本地伺服器", False, f"{url} 回 {response.status_code}")
+        return False
+
+    available = {m.get("id", "") for m in (response.json().get("data") or [])}
+    _report("本地伺服器", True, f"{url}({len(available)} 個模型)")
+
+    # Ollama 會回 "qwen3.5:9b-q8_0" 這種完整名稱,也可能省略 :latest
+    def present(name: str) -> bool:
+        return name in available or f"{name}:latest" in available
+
+    missing = [m for m in (settings.chat_model, settings.utility_model) if not present(m)]
+    if missing:
+        _report("模型已下載", False, "缺少 " + "、".join(missing))
+        print("\n拉下來再試一次:")
+        for name in missing:
+            print(f"    ollama pull {name}")
+        return False
+    _report("模型已下載", True, f"{settings.chat_model} + {settings.utility_model}")
+    return True
 
 
 def _probe_history(text: str):

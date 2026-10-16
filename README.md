@@ -4,6 +4,8 @@
 
 不是客服機器人。它不會問「有什麼我可以幫您的嗎」，它會記得你上禮拜說要去面試，然後問你結果怎樣。
 
+可以接 Claude API，也可以**完全跑在自己電腦上**（Ollama / LM Studio / llama.cpp / vLLM）——改一行設定的事。
+
 ```
 使用者 ──► LINE / Messenger / Telegram webhook
               │
@@ -14,7 +16,7 @@
         Engine ──► Memory ──► SQLite（近期對話 / 摘要 / 長期事實）
               │
               ▼
-        Brain ──► Claude（人設 + 記憶 + 對話）
+        Brain ──► Claude API ／ 本地模型（人設 + 記憶 + 對話）
               │
               ▼
         拆成幾則訊息 ──► 送回原平台
@@ -166,6 +168,77 @@ LINE 的回覆走 reply API（免費，一次最多五則），所以泡泡之�
 
 ---
 
+## 用自己電腦上的模型跑（不打雲端 API）
+
+把 `LLM_BACKEND` 換成 `local` 就好，程式其他部分都不用動。走的是 OpenAI 相容的
+`/v1/chat/completions`，所以 **Ollama、LM Studio、llama.cpp 的 llama-server、vLLM 都能接**。
+
+```bash
+# 1. 裝 Ollama 並把模型拉下來（依你的顯示記憶體選，見下表）
+ollama pull qwen3.5:9b-q8_0
+ollama pull qwen3.5:2b
+
+# 2. .env 改兩行
+LLM_BACKEND=local
+LOCAL_BASE_URL=http://localhost:11434/v1
+
+# 3. 驗
+python -m personabot.cli --selftest
+```
+
+`--selftest` 在本地模式下會多驗兩件事：伺服器活著嗎、要用的模型拉下來了沒。
+模型沒拉會直接把 `ollama pull` 指令印給你。
+
+### 依顯示記憶體選型號
+
+| VRAM | 聊天模型 | 背景雜事 | 合計 |
+|---|---|---|---|
+| 8GB | `qwen3.5:4b`（3.3GB） | `qwen3.5:0.8b`（1.2GB） | 4.5GB |
+| 12GB | `qwen3.5:9b-q4_K_M`（6.6GB） | `qwen3.5:2b`（1.9GB） | 8.5GB |
+| 16–20GB | `qwen3.5:9b-q8_0`（10GB） | `qwen3.5:2b`（1.9GB） | 12GB |
+| 24GB 以上 | `qwen3.8:27b`（18GB） | `qwen3.5:0.8b`（1.2GB） | 19GB |
+
+聊天模型要人設撐得住，值得花；摘要和抽記憶是結構化的小活，2B 就夠了。
+**別抓 `-mlx` 或 `-nvfp4` 結尾的 tag** ——那是 Apple Silicon 和 RTX 50 系列專用的格式。
+
+### 三個會咬人的地方
+
+**1. Ollama 的預設 context 可能裝不下。** 人設加記憶加對話很容易破 4K token，
+超過的部分會被無聲截掉，症狀是「它突然忘記自己是誰」。開伺服器前先設死：
+
+```bash
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+```
+
+**2. 同時要掛兩個模型。** 預設 Ollama 一次只留一個在記憶體裡，聊天和背景雜事會互相
+把對方踢掉，每輪都要重新載入。設成兩個：
+
+```bash
+OLLAMA_MAX_LOADED_MODELS=2 ollama serve
+```
+
+**3. 思考標籤。** Qwen3 這類模型會吐 `<think>…</think>`，程式已經擋掉了，
+但如果你換成別家模型用了不同標籤，看到推理過程出現在聊天視窗就是這個原因。
+
+### 本地跟雲端差在哪
+
+誠實講：**繁體中文口語是開源模型最弱的一環**。多數模型以簡中語料為主，會冒出
+「視頻」「質量」「牛逼」這類用詞，台灣腔會跑掉。小模型也比較容易聊個十幾輪就
+退回「有什麼我可以幫您的嗎」的助理腔。
+
+對策是在角色卡的 `speech_style` 裡把禁用詞寫死：
+
+```yaml
+speech_style:
+  - 只用台灣用語。不准出現「視頻」「質量」「牛逼」「給力」「水平」這類中國用語
+  - 影片不叫視頻、品質不叫質量、程度不叫水平
+```
+
+反過來說，背景的摘要和抽記憶本地跑很划算——那是結構化任務，小模型做得好，
+而且這部分本來就佔了多數的 token 量。
+
+---
+
 ## 指令
 
 使用者在任何平台都能打：
@@ -208,7 +281,7 @@ personabot/
 ├── persona.py       YAML 角色卡 → system prompt
 ├── store.py         SQLite：對話 / 訊息 / 長期事實
 ├── memory.py        視窗 + 摘要 + 事實抽取
-├── brain.py         Claude 呼叫
+├── brain.py         模型呼叫（Anthropic / 本地 OpenAI 相容兩種後端）
 ├── engine.py        主流程與指令
 ├── rate_limit.py    每分鐘上限
 ├── app.py           FastAPI webhook
