@@ -1,0 +1,27 @@
+[project]
+name = "personabot"
+version = "0.1.0"
+description = "跨平台 AI 角色陪聊機器人：同一個人格、同一份記憶，活在 LINE / Messenger / Telegram 上"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.49",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+personabot = "personabot.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["personabot*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
