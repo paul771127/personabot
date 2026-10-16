@@ -74,7 +74,7 @@ class Engine:
                 facts=context.facts,
                 display_name=conv.display_name,
             )
-        except Exception:  # noqa: BLE001 - 不管哪裡壞了,使用者都該收到點東西
+        except Exception:  # 不管哪裡壞了,使用者都該收到點東西
             log.exception("產生回覆時出錯(conversation_id=%s)", conv.id)
             return Reply(["欸,我這邊好像出了點問題,等一下再跟我說一次?"])
 
@@ -153,7 +153,7 @@ def split_bubbles(raw: str, max_bubbles: int, long_bubble_chars: int = 120) -> l
     if len(chunks) > max_bubbles:
         head = chunks[: max_bubbles - 1]
         tail = "\n".join(chunks[max_bubbles - 1 :])
-        chunks = head + [tail]
+        chunks = [*head, tail]
     return chunks
 
 

@@ -12,12 +12,13 @@ import base64
 import hashlib
 import hmac
 import logging
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 
 from ..types import InboundMessage, Reply
-from .base import Adapter
+from .base import Adapter, header
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class LineAdapter(Adapter):
 
     def verify(self, body: bytes, headers: Mapping[str, str]) -> bool:
         secret = self.settings.line.channel_secret
-        signature = _header(headers, "x-line-signature")
+        signature = header(headers, "x-line-signature")
         if not secret or not signature:
             return False
         digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
@@ -93,7 +94,7 @@ class LineAdapter(Adapter):
         if not self.settings.typing_indicator:
             return
         # loadingSeconds 必須是 5 的倍數,介於 5 到 60。
-        loading = max(5, min(60, int(round(seconds / 5)) * 5))
+        loading = max(5, min(60, round(seconds / 5) * 5))
         await self._post(
             f"{API}/chat/loading/start",
             json={"chatId": inbound.user_id, "loadingSeconds": loading},
@@ -111,10 +112,3 @@ class LineAdapter(Adapter):
         except httpx.HTTPError as exc:
             log.warning("抓 LINE 使用者名稱失敗:%s", exc)
         return None
-
-
-def _header(headers: Mapping[str, str], key: str) -> str:
-    for k, v in headers.items():
-        if k.lower() == key:
-            return v
-    return ""

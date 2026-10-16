@@ -35,7 +35,7 @@ class Persona:
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: str | Path) -> "Persona":
+    def load(cls, path: str | Path) -> Persona:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"找不到角色卡:{path}")
@@ -43,7 +43,7 @@ class Persona:
         return cls.from_dict(data, fallback_id=path.stem)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], fallback_id: str = "persona") -> "Persona":
+    def from_dict(cls, data: dict[str, Any], fallback_id: str = "persona") -> Persona:
         known = {
             "id",
             "name",

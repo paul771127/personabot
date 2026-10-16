@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..types import InboundMessage, Reply
-from .base import Adapter, pace
+from .base import Adapter, header, pace
 
 MAX_TEXT_LENGTH = 1950  # 官方上限 2000
 
@@ -25,7 +26,7 @@ class MessengerAdapter(Adapter):
 
     def verify(self, body: bytes, headers: Mapping[str, str]) -> bool:
         secret = self.settings.messenger.app_secret
-        signature = _header(headers, "x-hub-signature-256")
+        signature = header(headers, "x-hub-signature-256")
         if not secret or not signature.startswith("sha256="):
             return False
         expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
@@ -80,10 +81,3 @@ class MessengerAdapter(Adapter):
             self._send_url,
             json={"recipient": {"id": inbound.user_id}, "sender_action": "typing_on"},
         )
-
-
-def _header(headers: Mapping[str, str], key: str) -> str:
-    for k, v in headers.items():
-        if k.lower() == key:
-            return v
-    return ""

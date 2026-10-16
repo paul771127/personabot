@@ -180,6 +180,7 @@ uvicorn personabot.app:app --host 0.0.0.0 --port 8000
 ```bash
 pip install -r requirements-dev.txt
 pytest
+ruff check personabot tests
 ```
 
 測試不需要 API key：`tests/test_brain.py` 用假的 HTTP 傳輸層攔下請求，驗證送出去的 body 形狀正確（模型名稱、`output_config`、system 區塊的快取標記、記憶有沒有真的塞進去），其餘測試用假的 Brain。

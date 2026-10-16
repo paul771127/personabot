@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 
@@ -50,7 +51,7 @@ class Adapter(ABC):
 
     async def show_typing(self, inbound: InboundMessage, seconds: float = 3.0) -> None:
         """顯示「輸入中」。平台不支援就當沒這回事。"""
-        return None
+        return
 
     async def _post(self, url: str, *, json: dict, headers: dict | None = None) -> None:
         try:
@@ -59,6 +60,14 @@ class Adapter(ABC):
                 log.error("%s 送出失敗 %s:%s", self.name, response.status_code, response.text[:400])
         except httpx.HTTPError as exc:
             log.error("%s 送出失敗:%s", self.name, exc)
+
+
+def header(headers: Mapping[str, str], key: str) -> str:
+    """不分大小寫取 header。各家平台對大小寫的寫法不一致。"""
+    for k, v in headers.items():
+        if k.lower() == key.lower():
+            return v
+    return ""
 
 
 def typing_delay(text: str, settings: Settings) -> float:

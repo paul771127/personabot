@@ -9,13 +9,15 @@ Telegram 可以用 webhook,也可以用 long polling。本機開發時 polling �
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
-from typing import Any, Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
 
 import httpx
 
 from ..types import InboundMessage, Reply
-from .base import Adapter, pace
+from .base import Adapter, header, pace
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +38,7 @@ class TelegramAdapter(Adapter):
             # 沒設 secret 就無從驗起。正式環境請務必設定。
             log.warning("TELEGRAM_WEBHOOK_SECRET 沒設,webhook 無法驗證來源")
             return True
-        return hmac_equal(_header(headers, "x-telegram-bot-api-secret-token"), secret)
+        return hmac.compare_digest(header(headers, "x-telegram-bot-api-secret-token"), secret)
 
     def parse(self, payload: dict[str, Any]) -> list[InboundMessage]:
         message = payload.get("message") or payload.get("edited_message")
@@ -128,16 +130,3 @@ class TelegramAdapter(Adapter):
     async def delete_webhook(self) -> dict[str, Any]:
         response = await self.client.post(f"{self._api}/deleteWebhook")
         return response.json()
-
-
-def hmac_equal(a: str, b: str) -> bool:
-    import hmac
-
-    return hmac.compare_digest(a or "", b or "")
-
-
-def _header(headers: Mapping[str, str], key: str) -> str:
-    for k, v in headers.items():
-        if k.lower() == key:
-            return v
-    return ""

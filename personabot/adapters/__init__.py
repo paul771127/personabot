@@ -5,4 +5,4 @@ from .line import LineAdapter
 from .messenger import MessengerAdapter
 from .telegram import TelegramAdapter
 
-__all__ = ["Adapter", "pace", "LineAdapter", "MessengerAdapter", "TelegramAdapter"]
+__all__ = ["Adapter", "LineAdapter", "MessengerAdapter", "TelegramAdapter", "pace"]

@@ -10,14 +10,14 @@ from personabot.config import LineConfig, MessengerConfig, Settings, TelegramCon
 
 
 def _settings(**kwargs) -> Settings:
-    base = dict(
-        db_path=":memory:",
-        line=LineConfig(channel_secret="line-secret", access_token="line-token"),
-        messenger=MessengerConfig(
+    base = {
+        "db_path": ":memory:",
+        "line": LineConfig(channel_secret="line-secret", access_token="line-token"),
+        "messenger": MessengerConfig(
             app_secret="fb-secret", page_access_token="fb-token", verify_token="fb-verify"
         ),
-        telegram=TelegramConfig(bot_token="tg-token", webhook_secret="tg-secret"),
-    )
+        "telegram": TelegramConfig(bot_token="tg-token", webhook_secret="tg-secret"),
+    }
     base.update(kwargs)
     return Settings(**base)
 

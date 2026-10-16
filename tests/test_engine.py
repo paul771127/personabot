@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import pytest
-
 from personabot.engine import Engine, split_bubbles
 from personabot.store import Store
 from personabot.types import InboundMessage

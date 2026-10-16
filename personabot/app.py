@@ -129,7 +129,7 @@ async def _respond(app: FastAPI, adapter: Adapter, inbound: InboundMessage) -> N
         reply = await engine.handle(inbound)
         if reply:
             await adapter.send(inbound, reply)
-    except Exception:  # noqa: BLE001 - 背景任務不能把例外丟回 webhook
+    except Exception:  # 背景任務不能把例外丟回 webhook
         log.exception("處理 %s 訊息時出錯", adapter.name)
 
 

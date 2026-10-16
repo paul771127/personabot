@@ -47,7 +47,7 @@ class Memory:
         try:
             await self._extract_facts(conversation_id)
             await self._maybe_summarize(conversation_id)
-        except Exception:  # noqa: BLE001 - 背景任務,記下來就好
+        except Exception:  # 背景整理壞掉不該害使用者收不到回覆
             log.exception("整理記憶時出錯(conversation_id=%s)", conversation_id)
 
     async def _extract_facts(self, conversation_id: int) -> None:

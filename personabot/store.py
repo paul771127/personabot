@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -213,7 +213,7 @@ class Store:
                        ON CONFLICT (conversation_id, content) DO NOTHING""",
                     (conversation_id, content, now),
                 )
-                added += cur.rowcount if cur.rowcount > 0 else 0
+                added += max(0, cur.rowcount)
             conn.execute(
                 """DELETE FROM facts WHERE conversation_id = ? AND id NOT IN (
                        SELECT id FROM facts WHERE conversation_id = ?
