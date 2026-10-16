@@ -48,6 +48,15 @@ def _default_utility_model() -> str:
     return _env("UTILITY_MODEL", fallback)
 
 
+def _default_window_messages() -> int:
+    # 小模型的有效上下文比標稱的短,帶太多反而開始失憶、出戲。
+    return _int("WINDOW_MESSAGES", 16 if _backend() == "local" else 24)
+
+
+def _default_summarize_after() -> int:
+    return _int("SUMMARIZE_AFTER", 30 if _backend() == "local" else 40)
+
+
 @dataclass(frozen=True)
 class LocalConfig:
     """本地模型伺服器。Ollama、LM Studio、llama.cpp、vLLM 都講 OpenAI 那套。"""
@@ -111,8 +120,8 @@ class Settings:
     max_tokens: int = field(default_factory=lambda: _int("MAX_TOKENS", 1024))
 
     # 記憶
-    window_messages: int = field(default_factory=lambda: _int("WINDOW_MESSAGES", 24))
-    summarize_after: int = field(default_factory=lambda: _int("SUMMARIZE_AFTER", 40))
+    window_messages: int = field(default_factory=_default_window_messages)
+    summarize_after: int = field(default_factory=_default_summarize_after)
     max_facts: int = field(default_factory=lambda: _int("MAX_FACTS", 60))
 
     # 擬真:拆泡泡、打字延遲

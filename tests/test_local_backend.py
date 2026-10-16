@@ -167,3 +167,24 @@ def test_local_backend_needs_no_api_key(monkeypatch, tmp_path):
 def test_trailing_slash_in_base_url_is_trimmed(monkeypatch):
     monkeypatch.setenv("LOCAL_BASE_URL", "http://localhost:11434/v1/")
     assert LocalConfig().base_url == "http://localhost:11434/v1"
+
+
+def test_local_backend_uses_a_shorter_memory_window(monkeypatch):
+    """小模型塞太滿會出戲,所以本地預設比雲端保守。"""
+    monkeypatch.delenv("WINDOW_MESSAGES", raising=False)
+    monkeypatch.delenv("SUMMARIZE_AFTER", raising=False)
+
+    monkeypatch.setenv("LLM_BACKEND", "anthropic")
+    reset_settings()
+    assert (Settings().window_messages, Settings().summarize_after) == (24, 40)
+
+    monkeypatch.setenv("LLM_BACKEND", "local")
+    reset_settings()
+    assert (Settings().window_messages, Settings().summarize_after) == (16, 30)
+
+
+def test_explicit_env_beats_the_backend_default(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "local")
+    monkeypatch.setenv("WINDOW_MESSAGES", "8")
+    reset_settings()
+    assert Settings().window_messages == 8

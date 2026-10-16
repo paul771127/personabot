@@ -189,17 +189,22 @@ personabot 這邊只是 `LOCAL_BASE_URL` 指去哪裡的差別。
 ### 走 Ollama
 
 ```bash
-# 1. 裝 Ollama 並把模型拉下來（依你的顯示記憶體選，見下表）
+# 1. 開伺服器（兩個環境變數都要，原因見下面「會咬人的地方」）
+OLLAMA_CONTEXT_LENGTH=16384 OLLAMA_MAX_LOADED_MODELS=2 ollama serve
+
+# 2. 拉模型（依你的顯示記憶體選，見下表）
 ollama pull qwen3.5:9b-q8_0
 ollama pull qwen3.5:2b
 
-# 2. .env
-LLM_BACKEND=local
-LOCAL_BASE_URL=http://localhost:11434/v1
+# 3. 用現成的設定檔
+cp .env.ollama.example .env
 
-# 3. 驗
+# 4. 驗
 python -m personabot.cli --selftest
 ```
+
+`.env.ollama.example` 是調好的：本地後端、Qwen 模型、縮短的記憶視窗都填好了，
+不用自己拼。
 
 ### 走 Strata
 
@@ -272,13 +277,14 @@ OLLAMA_MAX_LOADED_MODELS=2 ollama serve
 「視頻」「質量」「牛逼」這類用詞，台灣腔會跑掉。小模型也比較容易聊個十幾輪就
 退回「有什麼我可以幫您的嗎」的助理腔。
 
-對策是在角色卡的 `speech_style` 裡把禁用詞寫死：
+這兩件事程式已經先替你處理：
 
-```yaml
-speech_style:
-  - 只用台灣用語。不准出現「視頻」「質量」「牛逼」「給力」「水平」這類中國用語
-  - 影片不叫視頻、品質不叫質量、程度不叫水平
-```
+- **台灣用語是自動的。** 只要角色卡的 `language` 含「繁體」或「台灣」，system prompt
+  就會自動帶上禁用詞清單（視頻、質量、水平、信息、軟件、屏幕、網絡……），
+  不用自己寫進 `speech_style`。
+- **記憶視窗會跟著後端縮。** `LLM_BACKEND=local` 時 `WINDOW_MESSAGES` 預設從 24 降到
+  16、`SUMMARIZE_AFTER` 從 40 降到 30——小模型的有效上下文比標稱的短，塞太滿
+  反而開始失憶。還是覺得它講到後來忘記自己是誰，就再往下調到 12。
 
 反過來說，背景的摘要和抽記憶本地跑很划算——那是結構化任務，小模型做得好，
 而且這部分本來就佔了多數的 token 量。

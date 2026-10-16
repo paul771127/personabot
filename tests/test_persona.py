@@ -52,3 +52,22 @@ def test_load_missing_file(tmp_path):
 def test_multiline_string_becomes_list():
     persona = Persona.from_dict({"name": "a", "personality": "一\n二\n"})
     assert persona.personality == ["一", "二"]
+
+
+def test_traditional_chinese_personas_get_the_taiwan_vocabulary_rule():
+    """開源小模型最常漏的就是這個,所以不靠角色卡自己寫,由系統帶上。"""
+    persona = Persona.from_dict({"name": "小葵", "language": "繁體中文(台灣用語)"})
+    rules = persona.chat_rules(max_bubbles=3)
+    assert "只用台灣的說法" in rules
+    assert "視頻" in rules and "質量" in rules
+
+
+def test_other_languages_do_not_get_it():
+    persona = Persona.from_dict({"name": "Aoi", "language": "English"})
+    assert "只用台灣的說法" not in persona.chat_rules(max_bubbles=3)
+
+
+def test_rules_still_contain_the_basics(persona):
+    rules = persona.chat_rules(max_bubbles=3)
+    for expected in ("最多 3 則", "不要用條列", "客服腔"):
+        assert expected in rules
