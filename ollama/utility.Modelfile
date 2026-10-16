@@ -1,0 +1,10 @@
+# 背景雜事用的模型:摘要、從對話裡抽長期記憶。
+#
+# 這是結構化任務,不需要創意,所以溫度壓低、用小模型。
+#
+#   ollama create personabot-utility -f ollama/utility.Modelfile
+FROM qwen3.5:2b
+
+# 要摘要的是一整段對話,context 不能太小。
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.3

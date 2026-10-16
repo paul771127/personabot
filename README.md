@@ -30,7 +30,9 @@
 
 ```bash
 git clone https://github.com/paul771127/personabot && cd personabot
-python3 -m venv .venv && source .venv/bin/activate
+
+python3 -m venv .venv
+source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
 cp .env.example .env            # 填進 ANTHROPIC_API_KEY
@@ -188,23 +190,30 @@ personabot 這邊只是 `LOCAL_BASE_URL` 指去哪裡的差別。
 
 ### 走 Ollama
 
+先從 [ollama.com/download](https://ollama.com/download) 裝好 Ollama。Windows 裝完它會
+自己常駐在工具列；Linux 要自己 `ollama serve`。然後跑一次 setup 腳本：
+
 ```bash
-# 1. 開伺服器（兩個環境變數都要，原因見下面「會咬人的地方」）
-OLLAMA_CONTEXT_LENGTH=16384 OLLAMA_MAX_LOADED_MODELS=2 ollama serve
-
-# 2. 拉模型（依你的顯示記憶體選，見下表）
-ollama pull qwen3.5:9b-q8_0
-ollama pull qwen3.5:2b
-
-# 3. 用現成的設定檔
-cp .env.ollama.example .env
-
-# 4. 驗
-python -m personabot.cli --selftest
+./scripts/setup-ollama.sh                                      # Linux / macOS
+powershell -ExecutionPolicy Bypass -File scripts\setup-ollama.ps1   # Windows
 ```
 
-`.env.ollama.example` 是調好的：本地後端、Qwen 模型、縮短的記憶視窗都填好了，
-不用自己拼。
+它會下載模型（10GB + 1.9GB，第一次很久）、用 `ollama/*.Modelfile` 建出調好 context
+的版本、並把 `.env.ollama.example` 複製成 `.env`。完了之後：
+
+```bash
+python -m personabot.cli --selftest
+python -m personabot.cli
+```
+
+**為什麼要多包一層 Modelfile：** Ollama 預設的 context 只有 4096 token，而人設加記憶
+加對話很容易就破掉——超過的部分會被無聲截掉，症狀是「它聊一聊突然忘記自己是誰」。
+要改可以設 `OLLAMA_CONTEXT_LENGTH` 環境變數，但在 Windows 上那得去 GUI 改系統環境
+變數、再把工具列的 Ollama 結束重開。把 `num_ctx` 烤進 Modelfile 裡就沒這些事，
+而且跟著 repo 走，換台機器一樣。
+
+顯卡不是 16–24GB 的話，改 `ollama/chat.Modelfile` 第一行的 `FROM`（見下表），
+再重跑一次腳本。
 
 ### 走 Strata
 
@@ -252,24 +261,15 @@ Q2_0 / IQ2_XS 在 32GB 上官方只保證「配 24GB 顯卡」跑得動，顯卡
 聊天模型要人設撐得住，值得花；摘要和抽記憶是結構化的小活，2B 就夠了。
 **別抓 `-mlx` 或 `-nvfp4` 結尾的 tag** ——那是 Apple Silicon 和 RTX 50 系列專用的格式。
 
-### 三個會咬人的地方（Ollama 路線）
+### 兩個會咬人的地方（Ollama 路線）
 
-**1. Ollama 的預設 context 可能裝不下。** 人設加記憶加對話很容易破 4K token，
-超過的部分會被無聲截掉，症狀是「它突然忘記自己是誰」。開伺服器前先設死：
+**1. Context 太小會讓它失憶。** 見上面 Modelfile 那段——照 setup 腳本走就已經處理好。
+自己手動 `ollama pull` 然後直接用原始模型名稱的話，就會踩到 4096 的預設值。
 
-```bash
-OLLAMA_CONTEXT_LENGTH=16384 ollama serve
-```
-
-**2. 同時要掛兩個模型。** 預設 Ollama 一次只留一個在記憶體裡，聊天和背景雜事會互相
-把對方踢掉，每輪都要重新載入。設成兩個：
-
-```bash
-OLLAMA_MAX_LOADED_MODELS=2 ollama serve
-```
-
-**3. 思考標籤。** Qwen3 這類模型會吐 `<think>…</think>`，程式已經擋掉了，
+**2. 思考標籤。** Qwen3 這類模型會吐 `<think>…</think>`，程式已經擋掉了，
 但如果你換成別家模型用了不同標籤，看到推理過程出現在聊天視窗就是這個原因。
+
+（`OLLAMA_MAX_LOADED_MODELS` 不用設——預設是每張 GPU 3 個，兩個模型同時常駐沒問題。）
 
 ### 本地跟雲端差在哪
 

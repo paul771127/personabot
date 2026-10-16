@@ -1,0 +1,18 @@
+# 聊天用的模型。
+#
+# 存在的理由只有一個:Ollama 預設 context 只有 4096 token,而人設加記憶加對話
+# 很容易就破掉,超過的部分會被無聲截掉 —— 症狀是「它聊一聊突然忘記自己是誰」。
+# 把 num_ctx 烤進模型裡,就不用在每台機器上去改環境變數(Windows 上特別麻煩)。
+#
+#   ollama create personabot-chat -f ollama/chat.Modelfile
+#
+# 顯卡只有 12GB 就把下面改成 qwen3.5:9b-q4_K_M,只有 8GB 用 qwen3.5:4b。
+FROM qwen3.5:9b-q8_0
+
+PARAMETER num_ctx 16384
+
+# 陪聊要有點變化,但不能跑掉人設。
+PARAMETER temperature 0.8
+PARAMETER top_p 0.9
+# 壓一下小模型愛重複同一句口頭禪的毛病。
+PARAMETER repeat_penalty 1.1
