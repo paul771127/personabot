@@ -27,12 +27,28 @@
 不用申請任何平台帳號，先在終端機跟角色聊聊看：
 
 ```bash
-git clone <你的 repo 網址> && cd personabot
+git clone https://github.com/paul771127/personabot && cd personabot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env     # 填進 ANTHROPIC_API_KEY
-python -m personabot.cli
+cp .env.example .env            # 填進 ANTHROPIC_API_KEY
+python -m personabot.cli --selftest    # 先確認五個環節都通
+python -m personabot.cli               # 開始聊
+```
+
+`--selftest` 會依序驗角色卡、資料庫、金鑰、真的打一次模型 API、記憶有沒有寫進去，
+哪一項沒過就停在那裡並說明原因，不會讓你對著一句「出了點問題」猜：
+
+```
+personabot 自我檢查
+
+  ✓ 角色卡 — 小葵（personas/aoi.yaml）
+  ✓ 資料庫 — data/personabot.db
+  ✓ 模型金鑰 — 已設定
+  ✓ 模型連線 — claude-opus-5-5 回了：欸，收到。
+  ✓ 記憶寫入 — 存了 2 則訊息、1 則長期記憶
+
+全部通過。可以直接 python -m personabot.cli 開始聊了。
 ```
 
 ```
