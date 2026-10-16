@@ -74,11 +74,17 @@ async def run_telegram(engine: Engine) -> None:
 
 OK = "\033[32m✓\033[0m"
 BAD = "\033[31m✗\033[0m"
+WARN = "\033[33m!\033[0m"
 
 
 def _report(label: str, passed: bool, detail: str = "") -> bool:
     print(f"  {OK if passed else BAD} {label}" + (f" — {detail}" if detail else ""))
     return passed
+
+
+def _warn(label: str, detail: str = "") -> None:
+    """有疑慮但不致命,不要用紅叉嚇人。"""
+    print(f"  {WARN} {label}" + (f" — {detail}" if detail else ""))
 
 
 async def selftest(settings: Settings, persona_path: str | None) -> int:
@@ -177,14 +183,17 @@ async def _check_local(settings: Settings) -> bool:
     def present(name: str) -> bool:
         return name in available or f"{name}:latest" in available
 
-    missing = [m for m in (settings.chat_model, settings.utility_model) if not present(m)]
-    if missing:
-        _report("模型已下載", False, "缺少 " + "、".join(missing))
-        print("\n拉下來再試一次:")
-        for name in missing:
-            print(f"    ollama pull {name}")
-        return False
-    _report("模型已下載", True, f"{settings.chat_model} + {settings.utility_model}")
+    wanted = dict.fromkeys([settings.chat_model, settings.utility_model])  # 去重且保序
+    missing = [m for m in wanted if not present(m)]
+    if not missing:
+        _report("模型已列出", True, " + ".join(wanted))
+        return True
+
+    # 名稱沒列出不代表真的不能用:Strata 這類伺服器只掛一個模型,任何名稱都收。
+    # 所以這裡只警告,真正的答案交給下一步真的打一次 API。
+    _warn("模型已列出", "伺服器沒列出 " + "、".join(missing))
+    print("    Ollama 的話先拉下來:" + "、".join(f"ollama pull {n}" for n in missing))
+    print("    Strata 這類只掛單一模型的伺服器不看名稱,繼續往下驗。")
     return True
 
 

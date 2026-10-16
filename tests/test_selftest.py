@@ -125,18 +125,20 @@ async def test_local_server_down_is_reported(settings, tmp_path, persona_file, c
     assert "模型連線" not in out
 
 
-async def test_unpulled_models_are_named_with_pull_commands(
+async def test_unlisted_models_warn_but_do_not_stop(
     settings, tmp_path, persona_file, stub_server, capsys
 ):
+    """Ollama 沒拉模型要給提示,但 Strata 那種「任何名稱都收」的伺服器不能被誤殺。"""
     stub_server["models"] = ["llama3:8b"]
 
     code = await selftest(_local(settings, tmp_path, stub_server["base_url"]), persona_file)
     out = capsys.readouterr().out
 
-    assert code == 1
-    assert "本地伺服器" in out
-    assert "缺少 qwen3.5:9b-q8_0、qwen3.5:2b" in out
+    assert "伺服器沒列出 qwen3.5:9b-q8_0、qwen3.5:2b" in out
     assert "ollama pull qwen3.5:9b-q8_0" in out
+    # 警告之後照樣往下驗,而這台 stub 回得出東西,所以整體是過的
+    assert "模型連線" in out
+    assert code == 0
 
 
 async def test_local_all_green(settings, tmp_path, persona_file, stub_server, capsys):
@@ -146,7 +148,7 @@ async def test_local_all_green(settings, tmp_path, persona_file, stub_server, ca
     out = capsys.readouterr().out
 
     assert code == 0
-    assert "模型已下載" in out
+    assert "模型已列出" in out
     assert "模型連線" in out
     assert "記憶寫入" in out
     assert "全部通過" in out

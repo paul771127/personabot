@@ -171,14 +171,29 @@ LINE 的回覆走 reply API（免費，一次最多五則），所以泡泡之�
 ## 用自己電腦上的模型跑（不打雲端 API）
 
 把 `LLM_BACKEND` 換成 `local` 就好，程式其他部分都不用動。走的是 OpenAI 相容的
-`/v1/chat/completions`，所以 **Ollama、LM Studio、llama.cpp 的 llama-server、vLLM 都能接**。
+`/v1/chat/completions`，所以 **Ollama、Strata、LM Studio、llama.cpp 的 llama-server、vLLM 都能接**。
+
+### 先選路線：小模型還是大模型
+
+| | Ollama | [Strata](https://github.com/Niko1221/Strata) |
+|---|---|---|
+| 跑什麼 | 塞得進顯卡的小模型（4B–27B） | 單一個 125B 的 Qwen3.8-Flash-Next，權重攤在 VRAM + RAM + SSD |
+| 繁中與人設 | 普通，小模型容易出戲 | 明顯好得多——模型大小是這件事的主要變因 |
+| 門檻 | 顯卡裝得下就好 | 12GB+ VRAM、32GB+ RAM（64GB 比較保險）、約 80GB SSD |
+| 彈性 | 可同時掛多個模型、隨時換 | 固定一個模型 |
+| 量化 | q4 / q8，損失小 | Q2_0 ～ IQ3_S，壓得很兇 |
+
+想要陪聊品質就選 Strata，想要輕巧好換就選 Ollama。兩個都開 OpenAI 相容 API，
+personabot 這邊只是 `LOCAL_BASE_URL` 指去哪裡的差別。
+
+### 走 Ollama
 
 ```bash
 # 1. 裝 Ollama 並把模型拉下來（依你的顯示記憶體選，見下表）
 ollama pull qwen3.5:9b-q8_0
 ollama pull qwen3.5:2b
 
-# 2. .env 改兩行
+# 2. .env
 LLM_BACKEND=local
 LOCAL_BASE_URL=http://localhost:11434/v1
 
@@ -186,10 +201,23 @@ LOCAL_BASE_URL=http://localhost:11434/v1
 python -m personabot.cli --selftest
 ```
 
-`--selftest` 在本地模式下會多驗兩件事：伺服器活著嗎、要用的模型拉下來了沒。
-模型沒拉會直接把 `ollama pull` 指令印給你。
+### 走 Strata
 
-### 依顯示記憶體選型號
+照它 repo 的說明裝起來（Windows 點 `START-HERE.bat`，Linux 跑 `./setup.sh`），
+它會下載約 70GB 的模型並在 `127.0.0.1:8080` 起服務。然後：
+
+```bash
+LLM_BACKEND=local
+LOCAL_BASE_URL=http://127.0.0.1:8080/v1
+CHAT_MODEL=strata          # Strata 不看名稱，填什麼都收
+UTILITY_MODEL=strata
+LOCAL_TIMEOUT=300          # 首次載入模型會卡住 1–3 分鐘
+```
+
+`--selftest` 會提醒「伺服器沒列出 strata」——那是正常的，Strata 只掛一個模型、
+不吃名稱比對，所以那是黃色警告不是紅叉，會繼續往下驗真正的連線。
+
+### 依顯示記憶體選型號（Ollama 路線）
 
 | VRAM | 聊天模型 | 背景雜事 | 合計 |
 |---|---|---|---|
@@ -201,7 +229,7 @@ python -m personabot.cli --selftest
 聊天模型要人設撐得住，值得花；摘要和抽記憶是結構化的小活，2B 就夠了。
 **別抓 `-mlx` 或 `-nvfp4` 結尾的 tag** ——那是 Apple Silicon 和 RTX 50 系列專用的格式。
 
-### 三個會咬人的地方
+### 三個會咬人的地方（Ollama 路線）
 
 **1. Ollama 的預設 context 可能裝不下。** 人設加記憶加對話很容易破 4K token，
 超過的部分會被無聲截掉，症狀是「它突然忘記自己是誰」。開伺服器前先設死：
