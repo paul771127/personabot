@@ -28,11 +28,18 @@
 
 不用申請任何平台帳號，先在終端機跟角色聊聊看：
 
+**先確認 Python 是 3.10 以上**（`anthropic` 套件從 1.0 起就要求 3.10，舊版連裝都裝不起來）：
+
+```bash
+python --version
+```
+
 ```bash
 git clone https://github.com/paul771127/personabot && cd personabot
 
-python3 -m venv .venv
+python3 -m venv .venv            # Windows 多版本共存時用 py -3.12 -m venv .venv
 source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 
 cp .env.example .env            # 填進 ANTHROPIC_API_KEY
@@ -372,6 +379,49 @@ personabot/
 ├── cli.py           終端機聊天 / Telegram polling
 └── adapters/        line.py · messenger.py · telegram.py
 ```
+
+---
+
+## 裝不起來的時候
+
+**`Could not find a version that satisfies the requirement anthropic>=0.49`**，
+而 pip 列出來的版本停在 `0.38.0` 左右——**這是 Python 太舊，不是 pip 太舊**。
+升級 pip 不會有用。
+
+`anthropic` 各版本的 Python 需求是這樣：
+
+| anthropic 版本 | 需要的 Python |
+|---|---|
+| 0.38.0 以下 | >= 3.7 |
+| 0.39.0 起 | >= 3.8 |
+| 0.72.1 起 | >= 3.9 |
+| **1.0.0 起** | **>= 3.10** |
+
+pip 停在哪個版本，就反推得出你的 Python 是幾版。停在 0.38.0 代表你跑的是 3.7。
+
+修法是裝一個新的 Python，然後**重建**虛擬環境（舊的 venv 綁死在舊 Python 上，
+不能沿用）：
+
+```powershell
+# Windows PowerShell，在專案資料夾裡
+Remove-Item -Recurse -Force .venv
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+```bash
+# Linux / macOS
+rm -rf .venv
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**`source : The term 'source' is not recognized`** —— `source` 是 Linux 的指令，
+PowerShell 要用 `.venv\Scripts\Activate.ps1`。提示字元前面出現 `(.venv)` 就是成功了。
 
 ---
 
