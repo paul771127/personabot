@@ -31,23 +31,32 @@ _INJECTION_GUARD = (
 
 _SUMMARY_PROMPT = """你在幫一個聊天機器人壓縮它的記憶。
 
+對話裡標成「使用者」的是真人,標成「{assistant}」的是機器人自己。
+
 把下面這段對話濃縮成重點筆記,給未來的自己看。只留之後還用得到的:
 對方是誰、發生過什麼事、約定了什麼、情緒上的轉折、講過的重要細節。
 寒暄、重複的話、沒有後續的閒聊可以丟掉。
 
 用條列,每行一件事,不要超過 20 行。用繁體中文。只輸出筆記本身。"""
 
-_FACTS_PROMPT = """你在幫一個聊天機器人整理它對某個人的長期記憶。
+_FACTS_PROMPT = """你在整理一份「關於使用者的筆記」。
 
-從下面這段新對話裡,挑出「以後還值得記得」的事實。標準:
-- 對方的身分、稱呼、工作、所在地、重要的人和寵物
-- 穩定的偏好與雷點
-- 正在進行、之後會想追問的事(面試、考試、搬家、看醫生)
+下面的對話有兩個人:標成「使用者」的是真人,標成「{assistant}」的是機器人。
+
+**只記使用者的事。{assistant} 講的話是機器人自己的設定與背景,一個字都不要記。**
+使用者沒講過的不要猜、不要補、不要推論年齡或職稱。
+
+要記的:
+- 使用者的稱呼、身分、就學或工作、所在地、重要的人和寵物
+- 使用者穩定的偏好與雷點
+- 使用者正在進行、之後值得追問的事(面試、考試、搬家、看醫生)
 - 兩人之間的約定
 
-不要記:一次性的閒聊、天氣、問候、機器人自己說過的話、已經在「已知」清單裡的事。
+不要記:閒聊、天氣、問候、已經在「已知」清單裡的事。
 
-一行一則,每則一句話講完,最多 5 則。沒有值得記的就只輸出「無」。只輸出清單本身。"""
+輸出格式:一行一則,每則一句完整的話,最多 5 則。
+不要加標題、不要加開場白、不要用冒號結尾的分類行。
+沒有值得記的就只輸出「無」,不要解釋。"""
 
 
 class Refused(Exception):
@@ -166,9 +175,39 @@ class LocalBackend:
             "max_tokens": prompt.max_tokens,
             "stream": False,
         }
+        if self.settings.local.disable_thinking:
+            payload["reasoning_effort"] = "none"
+
+        response = await self._post(payload)
+
+        # 有些伺服器不認得 reasoning_effort。退一步重送,不要整個失敗。
+        if response.status_code == 400 and "reasoning_effort" in payload:
+            log.info("伺服器不接受 reasoning_effort,改用不關閉思考的方式重送")
+            payload.pop("reasoning_effort")
+            response = await self._post(payload)
+
+        if response.status_code >= 400:
+            raise RuntimeError(f"本地模型伺服器回 {response.status_code}:{response.text[:300]}")
+
+        data = response.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"本地模型沒有回傳任何內容:{str(data)[:300]}")
+
+        choice = choices[0]
+        message = choice.get("message") or {}
+        text = strip_thinking(message.get("content") or "")
+        if text:
+            return text
+
+        # 空回覆。最常見的原因是模型把 token 全花在思考上,絕對不能默默吞掉 ——
+        # 吞掉的話使用者只會看到機器人不讀不回。
+        raise RuntimeError(_describe_empty_reply(choice, message, prompt.max_tokens))
+
+    async def _post(self, payload: dict) -> httpx.Response:
         headers = {"Authorization": f"Bearer {self.settings.local.api_key}"}
         try:
-            response = await self.client.post(
+            return await self.client.post(
                 f"{self.base_url}/chat/completions", json=payload, headers=headers
             )
         except httpx.ConnectError as exc:
@@ -176,21 +215,23 @@ class LocalBackend:
                 f"連不上本地模型伺服器 {self.base_url}。Ollama 有在跑嗎?(ollama serve)"
             ) from exc
 
-        if response.status_code >= 400:
-            raise RuntimeError(
-                f"本地模型伺服器回 {response.status_code}:{response.text[:300]}"
-            )
-
-        data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise RuntimeError(f"本地模型沒有回傳任何內容:{str(data)[:300]}")
-        return strip_thinking(choices[0].get("message", {}).get("content") or "")
-
     async def aclose(self) -> None:
         if self._client is not None and self._owns_client:
             await self._client.aclose()
             self._client = None
+
+
+def _describe_empty_reply(choice: dict, message: dict, max_tokens: int) -> str:
+    reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+    finish = choice.get("finish_reason")
+    if reasoning and finish == "length":
+        return (
+            f"模型把 {max_tokens} 個 token 全花在思考上,一個字都沒答出來。"
+            "設 LOCAL_DISABLE_THINKING=true(預設就是),或把 MAX_TOKENS 調大。"
+        )
+    if finish == "length":
+        return f"回覆被 max_tokens({max_tokens})截斷,而且截在開頭。把 MAX_TOKENS 調大。"
+    return f"模型回了空字串(finish_reason={finish})。"
 
 
 def make_backend(settings: Settings) -> Backend:
@@ -246,16 +287,18 @@ class Brain:
 
     # ---- 背景雜事 ----
 
-    async def summarize(self, messages: list[Message], previous_summary: str = "") -> str:
+    async def summarize(
+        self, messages: list[Message], previous_summary: str = "", assistant_name: str = "機器人"
+    ) -> str:
         if not messages:
             return previous_summary
         parts = []
         if previous_summary:
             parts.append(f"# 之前的筆記\n{previous_summary}\n")
-        parts.append(f"# 這次要併進去的對話\n{_transcript(messages)}")
+        parts.append(f"# 這次要併進去的對話\n{_transcript(messages, assistant_name)}")
 
         prompt = Prompt(
-            stable_system=_SUMMARY_PROMPT,
+            stable_system=_SUMMARY_PROMPT.format(assistant=assistant_name),
             dynamic_system="",
             messages=[{"role": "user", "content": "\n".join(parts)}],
             max_tokens=1500,
@@ -266,16 +309,18 @@ class Brain:
             return previous_summary
         return text.strip() or previous_summary
 
-    async def extract_facts(self, messages: list[Message], known: list[str]) -> list[str]:
+    async def extract_facts(
+        self, messages: list[Message], known: list[str], assistant_name: str = "機器人"
+    ) -> list[str]:
         if not messages:
             return []
         parts = []
         if known:
             parts.append("# 已知(不要重複)\n" + "\n".join(f"- {k}" for k in known) + "\n")
-        parts.append("# 新對話\n" + _transcript(messages))
+        parts.append("# 新對話\n" + _transcript(messages, assistant_name))
 
         prompt = Prompt(
-            stable_system=_FACTS_PROMPT,
+            stable_system=_FACTS_PROMPT.format(assistant=assistant_name),
             dynamic_system="",
             messages=[{"role": "user", "content": "\n".join(parts)}],
             max_tokens=500,
@@ -284,7 +329,7 @@ class Brain:
             text = await self.backend.complete(prompt, self.settings.utility_model)
         except Refused:
             return []
-        return _parse_facts(text)
+        return _parse_facts(text, assistant_name)
 
 
 def _to_api_messages(history: list[Message]) -> list[dict]:
@@ -301,8 +346,12 @@ def _to_api_messages(history: list[Message]) -> list[dict]:
     return out
 
 
-def _transcript(messages: list[Message]) -> str:
-    return "\n".join(f"{'對方' if m.role == 'user' else '你'}:{m.text}" for m in messages)
+def _transcript(messages: list[Message], assistant_label: str) -> str:
+    """標籤要明確。原本用「對方/你」,小模型會搞混誰是誰,
+    把機器人自己的背景當成使用者的事記下來。"""
+    return "\n".join(
+        f"{'使用者' if m.role == 'user' else assistant_label}:{m.text}" for m in messages
+    )
 
 
 # 長期記憶會跟著每一次請求送出去,所以單筆要有上限。小模型偶爾會把整段回覆
@@ -310,11 +359,28 @@ def _transcript(messages: list[Message]) -> str:
 MAX_FACT_CHARS = 120
 
 
-def _parse_facts(raw: str) -> list[str]:
+# 小模型很愛把提示詞裡的分類標題也一起吐出來,那些不是事實。
+_NOT_A_FACT = re.compile(r"(值得記得|沒值得記|要記的|不要記|以下是|清單|筆記)")
+
+
+def _parse_facts(raw: str, assistant_name: str = "機器人") -> list[str]:
+    # 小模型常常直接把對話逐字抄回來當「事實」,那是紀錄不是記憶。
+    echo = re.compile(rf"^(使用者|對方|{re.escape(assistant_name)})\s*[：:]")
     facts: list[str] = []
     for line in raw.splitlines():
         line = re.sub(r"^\s*[-*•]\s*|^\s*\d+[.)]\s*", "", line).strip()
         if not line or line in {"無", "(無)", "沒有", "none", "None"}:
+            continue
+        # 冒號結尾的是標題不是事實(「對方身份：」「要記的:」)
+        if line.endswith((":", "：")):
+            continue
+        if _NOT_A_FACT.search(line):
+            continue
+        if len(line) < 2:  # 單字殘句。中文三個字就能是一則事實(「叫阿明」)
+            continue
+        if echo.match(line):  # 「使用者:今天好累喔」這種是逐字抄,不是事實
+            continue
+        if line.endswith(("？", "?")):  # 問句也不是事實
             continue
         facts.append(line[:MAX_FACT_CHARS])
     return facts[:5]

@@ -68,6 +68,10 @@ class LocalConfig:
     api_key: str = field(default_factory=lambda: _env("LOCAL_API_KEY", "ollama"))
     # 本地模型慢,預設給兩分鐘。
     timeout: float = field(default_factory=lambda: _float("LOCAL_TIMEOUT", 120.0))
+    # Qwen3 這類模型預設會先思考一大段,陪聊根本不需要,而且常常 token 全花在
+    # 想、一個字都還沒答出來就被 max_tokens 截斷(實測 51 秒 vs 2 秒)。
+    # 伺服器不認得這個參數的話會自動重送一次不帶它的請求。
+    disable_thinking: bool = field(default_factory=lambda: _bool("LOCAL_DISABLE_THINKING", True))
 
 
 @dataclass(frozen=True)

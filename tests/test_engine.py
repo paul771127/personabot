@@ -184,3 +184,11 @@ async def test_old_messages_get_folded_into_a_summary(settings, persona, brain):
     assert conv.summarized_upto > 0
     # 摘要之後,送進模型的歷史只剩視窗內的訊息
     assert len(brain.chat_calls[-1]["history"]) <= 5
+
+
+async def test_persona_name_reaches_the_memory_extractor(settings, persona, brain):
+    """抽記憶時要能分辨誰是誰,否則會把機器人自己的背景記成使用者的事。"""
+    engine = _engine(settings, persona, brain)
+    await engine.handle(_msg("嗨"))
+    await engine.drain()
+    assert brain.last_assistant_name == persona.name

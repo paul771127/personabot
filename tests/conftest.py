@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from personabot.config import Settings, reset_settings
 from personabot.persona import Persona
 from personabot.store import Message, Store
 
+# personabot.config 在 import 時會 load_dotenv(),所以開發者自己的 .env 會流進
+# os.environ,測試結果就跟著那台機器的設定跑。每個測試前清掉,要什麼自己設。
+_ENV_PREFIXES = (
+    "LLM_BACKEND", "ANTHROPIC_", "CHAT_", "UTILITY_", "MAX_", "PERSONA_", "DB_PATH",
+    "WINDOW_", "SUMMARIZE_", "TYPING_", "RATE_LIMIT_", "LOCAL_",
+    "LINE_", "MESSENGER_", "TELEGRAM_",
+)
+
 
 @pytest.fixture(autouse=True)
-def _clean_settings():
+def _clean_settings(monkeypatch):
+    for key in list(os.environ):
+        if key.startswith(_ENV_PREFIXES):
+            monkeypatch.delenv(key, raising=False)
     reset_settings()
     yield
     reset_settings()
@@ -40,6 +53,7 @@ class FakeBrain:
         self.replies = list(replies or ["嗯。"])
         self.chat_calls: list[dict] = []
         self.facts_to_return: list[str] = []
+        self.last_assistant_name: str | None = None
         self.summary_to_return = "摘要"
 
     async def chat(self, persona, history, summary="", facts=None, display_name=None):
@@ -53,10 +67,16 @@ class FakeBrain:
         )
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
-    async def extract_facts(self, messages: list[Message], known: list[str]) -> list[str]:
+    async def extract_facts(
+        self, messages: list[Message], known: list[str], assistant_name: str = "機器人"
+    ) -> list[str]:
+        self.last_assistant_name = assistant_name
         return list(self.facts_to_return)
 
-    async def summarize(self, messages: list[Message], previous_summary: str = "") -> str:
+    async def summarize(
+        self, messages: list[Message], previous_summary: str = "", assistant_name: str = "機器人"
+    ) -> str:
+        self.last_assistant_name = assistant_name
         return self.summary_to_return
 
 

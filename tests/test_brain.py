@@ -167,3 +167,24 @@ def test_overlong_facts_are_truncated():
 
 def test_normal_length_facts_are_untouched():
     assert _parse_facts("- 他叫阿明,在台中念資工") == ["他叫阿明,在台中念資工"]
+
+
+def test_prompt_headings_are_not_stored_as_facts():
+    """小模型很愛把提示詞裡的分類標題也吐出來,那些不是事實。"""
+    raw = "「以後還值得記得」的事實：\n- 對方身份：\n- 他叫阿明\n要記的:\n- 在台中念資工"
+    assert _parse_facts(raw) == ["他叫阿明", "在台中念資工"]
+
+
+def test_short_chinese_facts_survive():
+    assert _parse_facts("- 叫阿明\n- 養貓\n- 住台北") == ["叫阿明", "養貓", "住台北"]
+
+
+def test_transcript_echoes_are_not_facts():
+    """小模型常常直接把對話逐字抄回來當事實,那是紀錄不是記憶。"""
+    raw = (
+        "使用者：今天好累喔\n"
+        "小葵：做書籍編輯啦,看稿子跟催印刷廠\n"
+        "使用者的身分是什麼？\n"
+        "他在台中念資工三年級"
+    )
+    assert _parse_facts(raw, assistant_name="小葵") == ["他在台中念資工三年級"]

@@ -154,8 +154,11 @@ async def selftest(settings: Settings, persona_path: str | None) -> int:
     store.reset_conversation(conv.id)  # 把測試痕跡清掉,別污染真實對話
 
     print(f"\n  {persona.name} 說:{conv_reply.text}")
+    if not memory_ok:
+        print("\n對話跑得起來,但記憶沒有寫進去。先別急著接平台,把上面那行貼出來看。")
+        return 1
     print("\n全部通過。可以直接 python -m personabot.cli 開始聊了。")
-    return 0 if memory_ok else 1
+    return 0
 
 
 async def _check_local(settings: Settings) -> bool:

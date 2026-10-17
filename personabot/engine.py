@@ -37,7 +37,7 @@ class Engine:
         self.persona = persona or Persona.load(self.settings.persona_path)
         self.store = store or Store(self.settings.db_path)
         self.brain = brain or Brain(self.settings)
-        self.memory = Memory(self.store, self.brain, self.settings)
+        self.memory = Memory(self.store, self.brain, self.settings, self.persona.name)
         self.limiter = RateLimiter(self.settings.rate_limit_per_minute)
         self._background: set[asyncio.Task] = set()
 

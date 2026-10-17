@@ -20,10 +20,15 @@ class Context:
 
 
 class Memory:
-    def __init__(self, store: Store, brain: Brain, settings: Settings) -> None:
+    def __init__(
+        self, store: Store, brain: Brain, settings: Settings, assistant_name: str = "機器人"
+    ) -> None:
         self.store = store
         self.brain = brain
         self.settings = settings
+        # 抽記憶時要能明確區分誰是誰,否則小模型會把機器人自己的背景
+        # 當成使用者的事記下來。
+        self.assistant_name = assistant_name
 
     def build(self, conv: Conversation) -> Context:
         """組出這次要餵給模型的全部記憶。"""
@@ -58,7 +63,7 @@ class Memory:
         if len(recent) < 2:
             return
         known = self.store.get_facts(conversation_id)
-        facts = await self.brain.extract_facts(recent, known)
+        facts = await self.brain.extract_facts(recent, known, self.assistant_name)
         if facts:
             added = self.store.add_facts(conversation_id, facts, cap=self.settings.max_facts)
             if added:
@@ -82,6 +87,6 @@ class Memory:
         if not to_fold:
             return
 
-        summary = await self.brain.summarize(to_fold, conv.summary)
+        summary = await self.brain.summarize(to_fold, conv.summary, self.assistant_name)
         self.store.set_summary(conversation_id, summary, cutoff)
         log.info("conversation=%s 已把 %d 則舊訊息壓成摘要", conversation_id, len(to_fold))
