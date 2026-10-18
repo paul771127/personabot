@@ -6,8 +6,9 @@ import asyncio
 import logging
 import random
 import time
+from datetime import datetime
 
-from . import rapport
+from . import clock, rapport
 from .brain import Brain
 from .bubbles import split_bubbles, tone_down
 from .config import Settings, get_settings
@@ -96,6 +97,7 @@ class Engine:
                     goal=self.persona.goal or None,
                 ),
                 max_bubbles=budget,
+                now=clock.describe_now(datetime.now()) if self.settings.clock else "",
             )
         except Exception:  # 不管哪裡壞了,使用者都該收到點東西
             log.exception("產生回覆時出錯(conversation_id=%s)", conv.id)

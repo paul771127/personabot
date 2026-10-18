@@ -13,7 +13,7 @@ from personabot.store import Message, Store
 _ENV_PREFIXES = (
     "LLM_BACKEND", "ANTHROPIC_", "CHAT_", "UTILITY_", "MAX_", "PERSONA_", "DB_PATH",
     "WINDOW_", "SUMMARIZE_", "TYPING_", "RATE_LIMIT_", "LOCAL_", "MERGE_", "RAPPORT", "FAST_REPLY_", "SLOW_REPLY_",
-    "COLD_REPLY_", "GUARD_", "MAX_LEAD_",
+    "COLD_REPLY_", "GUARD_", "MAX_LEAD_", "EMOJI_", "STRIP_TILDE", "CLOCK",
     "LINE_", "MESSENGER_", "TELEGRAM_",
 )
 
@@ -74,6 +74,7 @@ class FakeBrain:
         display_name=None,
         rapport="",
         max_bubbles=None,
+        now="",
     ):
         self.chat_calls.append(
             {
@@ -83,6 +84,7 @@ class FakeBrain:
                 "display_name": display_name,
                 "rapport": rapport,
                 "max_bubbles": max_bubbles,
+                "now": now,
             }
         )
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]

@@ -161,3 +161,10 @@ def test_the_field_report_lists_filled_empty_and_custom():
     assert report["個性"] == "有"
     assert report["對話目標"].startswith("—")
     assert report["書（自訂）"] == "有"
+
+
+def test_rules_forbid_filling_in_his_details(persona):
+    """他只講大概,她不該替他補細節(木頭杯子、肉圓)。"""
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "不要替他補細節" in rules
+    assert "想知道細節就問他" in rules

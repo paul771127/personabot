@@ -152,6 +152,8 @@ class Settings:
     emoji_gap: int = field(default_factory=lambda: _int("EMOJI_GAP", 5))
     # 拉長音的波浪號幾乎一定讀起來像在撒嬌,預設拿掉。
     strip_tilde: bool = field(default_factory=lambda: _bool("STRIP_TILDE", True))
+    # 讓她知道現在幾點、今天幾號、星期幾,話才對得上時間(半夜別說早安)。
+    clock: bool = field(default_factory=lambda: _bool("CLOCK", True))
 
     # 擬真:拆泡泡、打字延遲
     max_bubbles: int = field(default_factory=lambda: _int("MAX_BUBBLES", 3))

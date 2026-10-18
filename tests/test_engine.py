@@ -455,3 +455,15 @@ async def test_the_stage_and_strengths_reach_the_real_prompt(settings, persona):
     await engine.handle(_msg("今天去公館"))
     later = [p for p in backend.prompts if "第 3 階段" in p.dynamic_system]
     assert later and "很會挑書" in later[-1].dynamic_system
+
+
+async def test_the_current_time_reaches_the_model(settings, persona, brain):
+    engine = _engine(settings, persona, brain)
+    await engine.handle(_msg("嗨"))
+    assert "現在是星期" in brain.chat_calls[-1]["now"]
+
+
+async def test_the_clock_can_be_turned_off(settings, persona, brain):
+    engine = _engine(settings, persona, brain, clock=False)
+    await engine.handle(_msg("嗨"))
+    assert brain.chat_calls[-1]["now"] == ""

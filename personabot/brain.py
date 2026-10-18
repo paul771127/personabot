@@ -329,6 +329,7 @@ class Brain:
         display_name: str | None = None,
         rapport: str = "",
         max_bubbles: int | None = None,
+        now: str = "",
     ) -> str:
         messages = _to_api_messages(history)
         if not messages:
@@ -336,7 +337,7 @@ class Brain:
 
         prompt = Prompt(
             stable_system=persona.system_prompt(self.settings.max_bubbles),
-            dynamic_system=self._memory_block(summary, facts or [], display_name, rapport),
+            dynamic_system=self._memory_block(summary, facts or [], display_name, rapport, now),
             messages=messages,
             max_tokens=self.settings.max_tokens,
             effort=self.settings.chat_effort,
@@ -440,8 +441,11 @@ class Brain:
         facts: list[str],
         display_name: str | None,
         rapport: str = "",
+        now: str = "",
     ) -> str:
         parts = [_INJECTION_GUARD]
+        if now:
+            parts.append(now)
         if display_name:
             parts.append(f"\n## 你正在跟誰講話\n對方在這個平台上的名字是「{display_name}」。")
         if facts:
