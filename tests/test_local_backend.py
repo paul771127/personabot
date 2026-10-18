@@ -188,3 +188,37 @@ def test_explicit_env_beats_the_backend_default(monkeypatch):
     monkeypatch.setenv("WINDOW_MESSAGES", "8")
     reset_settings()
     assert Settings().window_messages == 8
+
+
+# ---- 背景雜事的溫度 ----
+
+
+async def test_background_work_asks_for_a_low_temperature(tmp_path, persona):
+    """聊天模型的 Modelfile 溫度是 0.8。UTILITY_MODEL 指到它的時候,
+    摘要跟合併記憶就得自己把溫度壓下來,不然每次吐出來的格式都不一樣。"""
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, json=_chat_response("使用者叫阿明"))
+
+    settings = _local_settings(tmp_path, utility_model="personabot-chat")
+    brain = Brain(settings=settings, backend=_backend(settings, handler))
+
+    await brain.summarize(_history())
+    assert captured[-1]["temperature"] == pytest.approx(0.2)
+    assert captured[-1]["model"] == "personabot-chat"
+
+
+async def test_chat_leaves_the_temperature_to_the_modelfile(tmp_path, persona):
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, json=_chat_response("欸,你好"))
+
+    settings = _local_settings(tmp_path)
+    brain = Brain(settings=settings, backend=_backend(settings, handler))
+
+    await brain.chat(persona, _history())
+    assert "temperature" not in captured[-1]

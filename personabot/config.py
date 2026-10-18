@@ -127,6 +127,33 @@ class Settings:
     window_messages: int = field(default_factory=_default_window_messages)
     summarize_after: int = field(default_factory=_default_summarize_after)
     max_facts: int = field(default_factory=lambda: _int("MAX_FACTS", 60))
+    # 摘要的時候多打一次 utility 模型,把講同一件事的記憶併起來。
+    # 字面上的去重一直都會做,這個管的是語意上的那層。
+    merge_facts: bool = field(default_factory=lambda: _bool("MERGE_FACTS", True))
+
+    # 關係狀態:興趣度、戒心、對方狀態、回訊節奏
+    rapport: bool = field(default_factory=lambda: _bool("RAPPORT", True))
+    # 多久以內回算「秒回」,多久以上算「晾著」
+    fast_reply_seconds: float = field(default_factory=lambda: _float("FAST_REPLY_SECONDS", 30.0))
+    slow_reply_seconds: float = field(
+        default_factory=lambda: _float("SLOW_REPLY_SECONDS", 6 * 3600.0)
+    )
+    # 幾個字以內算敷衍(「哈哈」這種被逗笑的不算)
+    cold_reply_chars: int = field(default_factory=lambda: _int("COLD_REPLY_CHARS", 8))
+    # 連續幾則沒再試探,戒心就降一格
+    guard_cooldown_turns: int = field(default_factory=lambda: _int("GUARD_COOLDOWN_TURNS", 10))
+    # 跟著對方的節奏回,但最多讓他等這麼久(秒)。
+    # 不要調太大:對方剛送出訊息、正看著螢幕等回覆,超過半分鐘的靜默看起來
+    # 不像矜持,像當機。實測 90 秒的時候會以為機器人掛了。
+    max_lead_delay: float = field(default_factory=lambda: _float("MAX_LEAD_DELAY", 25.0))
+
+    # 語氣收斂。提示詞裡寫「很少用表情符號」沒用,實測十二輪有八輪都帶表情,
+    # 看起來很油。所以由程式把關:最近幾則用過表情,這則就不用。0 = 不限制。
+    emoji_gap: int = field(default_factory=lambda: _int("EMOJI_GAP", 5))
+    # 拉長音的波浪號幾乎一定讀起來像在撒嬌,預設拿掉。
+    strip_tilde: bool = field(default_factory=lambda: _bool("STRIP_TILDE", True))
+    # 讓她知道現在幾點、今天幾號、星期幾,話才對得上時間(半夜別說早安)。
+    clock: bool = field(default_factory=lambda: _bool("CLOCK", True))
 
     # 擬真:拆泡泡、打字延遲
     max_bubbles: int = field(default_factory=lambda: _int("MAX_BUBBLES", 3))

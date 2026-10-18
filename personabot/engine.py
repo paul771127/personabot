@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
+import random
+import time
+from datetime import datetime
 
+from . import clock, rapport
 from .brain import Brain
+from .bubbles import split_bubbles, tone_down
 from .config import Settings, get_settings
 from .memory import Memory
 from .persona import Persona
@@ -40,6 +44,8 @@ class Engine:
         self.memory = Memory(self.store, self.brain, self.settings, self.persona.name)
         self.limiter = RateLimiter(self.settings.rate_limit_per_minute)
         self._background: set[asyncio.Task] = set()
+        # 每輪回幾則是抽籤決定的。測試可以換成固定種子。
+        self.rng = random.Random()
 
     async def handle(self, inbound: InboundMessage) -> Reply:
         text = inbound.text.strip()
@@ -62,9 +68,17 @@ class Engine:
             if command_reply is not None:
                 return command_reply
 
+        started = time.monotonic()
+        signals = self._read_pace(conv.id, inbound, text)
         self.store.add_message(conv.id, "user", text)
+        self.store.update_rapport(
+            conv.id, last_gap=signals.gap_seconds, last_chars=signals.chars
+        )
         conv = self.store.get_conversation(conv.id) or conv
         context = self.memory.build(conv)
+        budget = rapport.pick_bubbles(conv, signals, self.settings, self.rng)
+        energy = rapport.pick_energy(conv, signals, self.rng, prev=conv.last_energy)
+        self.store.update_rapport(conv.id, last_energy=energy)
 
         try:
             raw = await self.brain.chat(
@@ -73,20 +87,55 @@ class Engine:
                 summary=context.summary,
                 facts=context.facts,
                 display_name=conv.display_name,
+                rapport=rapport.describe(
+                    conv,
+                    self.settings,
+                    signals,
+                    budget,
+                    strengths=self.persona.strengths,
+                    energy=energy,
+                    goal=self.persona.goal or None,
+                ),
+                max_bubbles=budget,
+                now=clock.describe_now(datetime.now()) if self.settings.clock else "",
             )
         except Exception:  # 不管哪裡壞了,使用者都該收到點東西
             log.exception("產生回覆時出錯(conversation_id=%s)", conv.id)
             return Reply(["欸,我這邊好像出了點問題,等一下再跟我說一次?"])
 
         bubbles = split_bubbles(
-            raw, self.settings.max_bubbles, long_bubble_chars=self.persona.max_chars_per_bubble * 2
+            raw,
+            budget,
+            long_bubble_chars=self.persona.max_chars_per_bubble * 2,
+            max_chars=self.persona.max_chars_per_bubble,
+        )
+        # 要在這則寫進資料庫之前看,不然會拿自己跟自己比。
+        her_recent = [
+            m.text for m in self.store.recent_messages(conv.id, limit=12) if m.role == "assistant"
+        ]
+        bubbles = tone_down(
+            bubbles,
+            her_recent,
+            emoji_gap=self.settings.emoji_gap,
+            strip_tilde=self.settings.strip_tilde,
         )
         if not bubbles:
             return Reply([])
 
         self.store.add_message(conv.id, "assistant", "\n\n".join(bubbles))
         self._spawn(self.memory.maintain(conv.id))
-        return Reply(bubbles)
+        # 想讓他等的總時間,扣掉模型已經跑掉的。模型想了八秒,就只要再等兩秒。
+        target = rapport.lead_delay(conv, signals, self.settings)
+        waited = time.monotonic() - started
+        return Reply(bubbles, lead_delay=max(0.0, target - waited))
+
+    def _read_pace(
+        self, conversation_id: int, inbound: InboundMessage, text: str
+    ) -> rapport.Signals:
+        """對方隔多久才回、這則多長。要在寫進資料庫之前算,不然會跟自己比。"""
+        last = self.store.last_message(conversation_id, "assistant")
+        gap = inbound.received_at - last.created_at if last else 0.0
+        return rapport.read_message(text, gap, self.settings)
 
     def greeting(self) -> Reply:
         if not self.persona.greeting:
@@ -129,38 +178,3 @@ class Engine:
         """等背景的記憶整理跑完 —— 關機跟測試時用。"""
         while self._background:
             await asyncio.gather(*list(self._background), return_exceptions=True)
-
-
-_SENTENCE_END = re.compile(r"(?<=[。!?!?~])\s*")
-
-
-def split_bubbles(raw: str, max_bubbles: int, long_bubble_chars: int = 120) -> list[str]:
-    """把模型回的一段文字拆成幾則訊息。
-
-    先照空白行拆(這是我們要求模型用的分隔方式);如果模型沒照做又寫得很長,
-    就退而求其次照句尾標點拆。
-    """
-    raw = raw.strip()
-    if not raw:
-        return []
-
-    chunks = [c.strip() for c in re.split(r"\n\s*\n", raw) if c.strip()]
-    if len(chunks) == 1 and len(chunks[0]) > long_bubble_chars:
-        sentences = [s.strip() for s in _SENTENCE_END.split(chunks[0]) if s.strip()]
-        if len(sentences) > 1:
-            chunks = _regroup(sentences, max_bubbles)
-
-    if len(chunks) > max_bubbles:
-        head = chunks[: max_bubbles - 1]
-        tail = "\n".join(chunks[max_bubbles - 1 :])
-        chunks = [*head, tail]
-    return chunks
-
-
-def _regroup(sentences: list[str], max_bubbles: int) -> list[str]:
-    """把句子平均分成最多 max_bubbles 組,別讓某一則特別長。"""
-    groups: list[str] = []
-    target = max(1, len(sentences) // max_bubbles + (1 if len(sentences) % max_bubbles else 0))
-    for i in range(0, len(sentences), target):
-        groups.append("".join(sentences[i : i + target]))
-    return groups[:max_bubbles]
