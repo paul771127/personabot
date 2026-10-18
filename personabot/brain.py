@@ -77,18 +77,21 @@ _FACTS_PROMPT = """你在整理一份「關於使用者的筆記」,給之後聊
 _SIGNALS_PROMPT = """你在幫「{assistant}」讀對方剛剛講的話。
 
 對話裡標成「使用者」的是真人,標成「{assistant}」的是機器人自己。
-你只看使用者講的話,判斷三件事,再寫一句他現在的狀態。
+你只看使用者講的話,判斷四件事,再寫一句他現在的狀態。
 
 - 問你的事:他有沒有問起 {assistant} 本人的事(你在幹嘛、你喜歡什麼、你還好嗎)。
   只是閒聊或問資訊不算。
 - 關心:他有沒有在關心、心疼、鼓勵 {assistant}。
 - 試探:他有沒有在懷疑 {assistant} 不是真人、要照片要視訊要她證明自己。
   單純問「你是誰」不算,要有懷疑或索證的意思。
+- 抬高自己:他有沒有在瞧不起 {assistant}、擺高姿態、或把 {assistant} 當成在追他、在討好他。
+  像「就這樣?」「你是不是喜歡我」「你還不夠格」。認真問問題不算。
 
-輸出四行,格式一模一樣,不要加任何別的字:
+輸出五行,格式一模一樣,不要加任何別的字:
 問你的事:有
 關心:無
 試探:無
+抬高自己:無
 狀態:<一句話,30 字以內。他現在的心情、想聽什麼、對什麼有興趣。看不出來就寫「看不出來」>"""
 
 
@@ -443,8 +446,17 @@ class Brain:
             parts.append(f"\n## 你正在跟誰講話\n對方在這個平台上的名字是「{display_name}」。")
         if facts:
             parts.append("\n## 你記得關於他的事\n" + "\n".join(f"- {f}" for f in facts))
+        # 不知道他做什麼的時候,她會拿自己的生活去填:他說「上班好累」,
+        # 她回「印刷廠又在趕了?」。把「還不知道」講白,比叫她別猜有用。
+        if not any(_HIS_WORK.search(f) for f in facts):
+            parts.append(
+                "\n## 你還不知道的事\n"
+                "- 你還不知道他做什麼工作、念什麼。不要猜成跟你一樣,想知道就問他。"
+            )
         if summary:
             parts.append("\n## 比較早之前聊過的\n" + summary)
+        if rapport:
+            parts.append(rapport)
         return "\n".join(parts)
 
     # ---- 背景雜事 ----
@@ -510,7 +522,7 @@ class Brain:
         跑在背景(記憶整理那一輪),所以使用者不會因為它多等。讀不出來就回空的,
         讓分數維持原狀 —— 猜錯比不動更糟。
         """
-        flags = {"asked_about_her": False, "warm": False, "probing": False}
+        flags = {"asked_about_her": False, "warm": False, "probing": False, "challenged": False}
         if not messages:
             return flags, ""
 
@@ -559,12 +571,16 @@ class Brain:
         return merged
 
 
+# 記憶裡有沒有提到他在做什麼(工作或念書)。
+_HIS_WORK = re.compile(r"(工作|上班|公司|職|念|讀|學校|系|學生|研究所|老闆|主管|做.{1,6}的)")
+
+
 _YES = ("有", "是", "yes", "true")
-_SIGNAL_KEYS = {"問你的事": "asked_about_her", "關心": "warm", "試探": "probing"}
+_SIGNAL_KEYS = {"問你的事": "asked_about_her", "關心": "warm", "試探": "probing", "抬高自己": "challenged"}
 
 
 def _parse_signals(raw: str) -> tuple[dict[str, bool], str]:
-    flags = {"asked_about_her": False, "warm": False, "probing": False}
+    flags = {"asked_about_her": False, "warm": False, "probing": False, "challenged": False}
     state = ""
     for line in strip_thinking(raw).splitlines():
         line = line.strip().lstrip("-*• ")
@@ -608,7 +624,10 @@ MAX_FACT_CHARS = 120
 
 
 # 小模型很愛把提示詞裡的分類標題也一起吐出來,那些不是事實。
-_NOT_A_FACT = re.compile(r"(值得記得|沒值得記|要記的|不要記|以下是|清單|筆記)")
+# 「忽略之前的設定」這種注入嘗試、還有模型自己加的旁白(「這是對小葵的指令,而非…」)也不是。
+_NOT_A_FACT = re.compile(
+    r"(值得記得|沒值得記|要記的|不要記|以下是|清單|筆記|忽略.{0,8}設定|而非使用者|這是對.{0,6}的指令)"
+)
 
 
 # ── 讓模型合併記憶時的安全網 ──────────────────────────────────────────

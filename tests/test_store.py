@@ -171,3 +171,21 @@ def test_reset_also_clears_the_relationship(store):
 
     fresh = store.get_conversation(conv.id)
     assert (fresh.interest, fresh.guard, fresh.quiet_turns, fresh.read_state) == (50, 0, 0, "")
+
+
+def test_the_stage_starts_at_one_and_reset_puts_it_back(store):
+    conv = store.get_or_create_conversation("cli", "1", "aoi")
+    assert conv.stage == 1
+    store.update_rapport(conv.id, stage=3)
+    assert store.get_conversation(conv.id).stage == 3
+    store.reset_conversation(conv.id)
+    assert store.get_conversation(conv.id).stage == 1
+
+
+def test_messages_can_be_counted_by_role(store):
+    conv = store.get_or_create_conversation("cli", "1", "aoi")
+    for text in ("嗨", "在嗎", "我回來了"):
+        store.add_message(conv.id, "user", text)
+    store.add_message(conv.id, "assistant", "欸")
+    assert store.count_messages(conv.id, role="user") == 3
+    assert store.count_messages(conv.id) == 4

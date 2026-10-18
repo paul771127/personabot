@@ -53,12 +53,8 @@ _TRAILING_PAUSE = "，,、;；"
 _INTERJECTION = re.compile(r"^[欸啊嗯喔哦唉噢誒]+[.…。~～!！?？,，]*$")  # noqa: RUF001
 
 
-def _pack_all(chunks: list[str], max_chars: int) -> list[str]:
-    """切成句子(還太長就照逗號再切),短的併在一起,每則不超過 max_chars。
-
-    塞不進 max_bubbles 則的部分就不送了。真人傳訊息也不會一口氣講完,
-    寧可少講一點,也不要一次跳出一整串。
-    """
+def _units(chunks: list[str], max_chars: int) -> list[tuple[str, int, bool]]:
+    """切成句子(還太長就照逗號再切)。回傳 (文字, 第幾行, 是不是半句)。"""
     # (文字, 第幾行, 是不是從一句長句裡切出來的半句)
     units: list[tuple[str, int, bool]] = []
     line_no = 0
@@ -83,7 +79,10 @@ def _pack_all(chunks: list[str], max_chars: int) -> list[str]:
                     else:
                         packed.append(clause)
                 units += [(p, line_no, True) for p in packed]
+    return units
 
+
+def _assemble(units: list[tuple[str, int, bool]], max_chars: int, merge: bool) -> list[str]:
     bubbles: list[str] = []
     last_line = 0
     pending = ""  # 單獨一個「欸...」是下一句的開頭,先扣著
@@ -95,7 +94,7 @@ def _pack_all(chunks: list[str], max_chars: int) -> list[str]:
             text, pending = pending + text, ""
         # 只有同一行裡的短句才併(「嗯。好。」)。跨行併起來會變成「我是小葵二十四歲…」
         # 這種沒有標點的一長串。半句也不往前黏,不然「欸,」會黏到上一句後面。
-        can_merge = bubbles and line == last_line and not fragment
+        can_merge = merge and bubbles and line == last_line and not fragment
         if can_merge and len(bubbles[-1]) + len(text) <= max_chars:
             bubbles[-1] += text
         else:
@@ -109,8 +108,21 @@ def _pack_all(chunks: list[str], max_chars: int) -> list[str]:
     return [b.rstrip(_TRAILING_PAUSE) or b for b in bubbles]
 
 
+def _pack_all(chunks: list[str], max_chars: int, max_bubbles: int) -> list[str]:
+    """每則不超過 max_chars。句子能各自一則就各自一則,超過 max_bubbles 才把同一行的短句併起來。
+
+    原本是一律先併 —— 結果兩句加起來沒超過字數就變成一則,這輪明明可以回兩則,
+    實測十二輪只有一輪真的回了兩則。
+    """
+    units = _units(chunks, max_chars)
+    loose = _assemble(units, max_chars, merge=False)
+    if len(loose) <= max_bubbles:
+        return loose
+    return _assemble(units, max_chars, merge=True)
+
+
 def _pack(chunks: list[str], max_chars: int, max_bubbles: int) -> list[str]:
-    bubbles = _pack_all(chunks, max_chars)
+    bubbles = _pack_all(chunks, max_chars, max_bubbles)
     # 第一則是回答,再長也得送。後面的超過字數又切不開,就當成不重要的刪掉。
     over = [b for b in bubbles[1:] if len(b) > max_chars]
     if over:
@@ -121,6 +133,41 @@ def _pack(chunks: list[str], max_chars: int, max_bubbles: int) -> list[str]:
     return bubbles[:max_bubbles]
 
 
+# 表情符號,連同組合用的變體選擇符和零寬連接符。
+_EMOJI = re.compile("[\U0001f300-\U0001faff\u2600-\u27bf\ufe0f\u200d]")
+_TILDE = re.compile(r"[～~]+")  # noqa: RUF001
+_SPACES = re.compile(r"\s{2,}")
+
+
+def tone_down(
+    bubbles: list[str],
+    her_recent: list[str],
+    emoji_gap: int = 5,
+    strip_tilde: bool = True,
+) -> list[str]:
+    """把讓人覺得油的小動作收掉:表情符號太密、拉長音的波浪號。
+
+    her_recent 是她最近幾則回覆(舊到新)。最近 emoji_gap 則裡用過表情,
+    這則就一個都不留;沒用過的話,整則回覆最多留第一個。
+    """
+    keep_one = emoji_gap <= 0 or not any(_EMOJI.search(t) for t in her_recent[-emoji_gap:])
+    out: list[str] = []
+    for bubble in bubbles:
+        if strip_tilde:
+            bubble = _TILDE.sub("", bubble)
+        if emoji_gap > 0:
+            first = _EMOJI.search(bubble) if keep_one else None
+            if first:
+                bubble = bubble[: first.end()] + _EMOJI.sub("", bubble[first.end() :])
+                keep_one = False
+            else:
+                bubble = _EMOJI.sub("", bubble)
+        bubble = _SPACES.sub(" ", bubble).strip()
+        if bubble:
+            out.append(bubble)
+    return out
+
+
 def overflows(raw: str, max_chars: int, max_bubbles: int) -> bool:
     """這段話照規矩切完,是不是會有東西被丟掉、或有一則還是超過字數。
 
@@ -129,7 +176,7 @@ def overflows(raw: str, max_chars: int, max_bubbles: int) -> bool:
     chunks = [c.strip() for c in re.split(r"\n\s*\n", raw.strip()) if c.strip()]
     if not chunks:
         return False
-    bubbles = _pack_all(chunks, max_chars)
+    bubbles = _pack_all(chunks, max_chars, max_bubbles)
     return len(bubbles) > max_bubbles or any(len(b) > max_chars for b in bubbles)
 
 

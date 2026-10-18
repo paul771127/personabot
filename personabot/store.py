@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     read_state      TEXT NOT NULL DEFAULT '',
     last_gap        REAL NOT NULL DEFAULT 0,
     last_chars      INTEGER NOT NULL DEFAULT 0,
+    stage           INTEGER NOT NULL DEFAULT 1,
+    last_energy     TEXT NOT NULL DEFAULT '',
     UNIQUE (platform, user_id, persona_id)
 );
 
@@ -63,6 +65,8 @@ _ADDED_COLUMNS = [
     ("conversations", "read_state", "TEXT NOT NULL DEFAULT ''"),
     ("conversations", "last_gap", "REAL NOT NULL DEFAULT 0"),
     ("conversations", "last_chars", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "stage", "INTEGER NOT NULL DEFAULT 1"),
+    ("conversations", "last_energy", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -83,6 +87,8 @@ class Conversation:
     read_state: str = ""
     last_gap: float = 0.0
     last_chars: int = 0
+    stage: int = 1  # 1 開場、2 熟悉、3 吸引
+    last_energy: str = ""  # 上一則的語氣能量,拿來讓這則不要同調
 
 
 @dataclass
@@ -236,7 +242,10 @@ class Store:
 
     def update_rapport(self, conversation_id: int, **fields: object) -> None:
         """更新興趣度、戒心那幾個欄位。只寫有傳進來的,沒傳的不動。"""
-        allowed = {"interest", "guard", "quiet_turns", "read_state", "last_gap", "last_chars"}
+        allowed = {
+            "interest", "guard", "quiet_turns", "read_state", "last_gap", "last_chars",
+            "stage", "last_energy",
+        }
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"update_rapport 不認得這些欄位:{sorted(unknown)}")
@@ -295,12 +304,16 @@ class Store:
             ).fetchall()
         return [Message(**dict(r)) for r in rows]
 
-    def count_messages(self, conversation_id: int, after_id: int = 0) -> int:
+    def count_messages(
+        self, conversation_id: int, after_id: int = 0, role: str | None = None
+    ) -> int:
+        sql = "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ? AND id > ?"
+        params: tuple = (conversation_id, after_id)
+        if role is not None:
+            sql += " AND role = ?"
+            params += (role,)
         with self._conn() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ? AND id > ?",
-                (conversation_id, after_id),
-            ).fetchone()
+            row = conn.execute(sql, params).fetchone()
         return int(row["n"])
 
     # ---- 長期記憶 ----
@@ -423,7 +436,7 @@ class Store:
             conn.execute(
                 """UPDATE conversations SET summary = '', summarized_upto = 0,
                        interest = 50, guard = 0, quiet_turns = 0, read_state = '',
-                       last_gap = 0, last_chars = 0
+                       last_gap = 0, last_chars = 0, stage = 1, last_energy = ''
                    WHERE id = ?""",
                 (conversation_id,),
             )

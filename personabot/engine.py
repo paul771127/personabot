@@ -9,7 +9,7 @@ import time
 
 from . import rapport
 from .brain import Brain
-from .bubbles import split_bubbles
+from .bubbles import split_bubbles, tone_down
 from .config import Settings, get_settings
 from .memory import Memory
 from .persona import Persona
@@ -76,6 +76,8 @@ class Engine:
         conv = self.store.get_conversation(conv.id) or conv
         context = self.memory.build(conv)
         budget = rapport.pick_bubbles(conv, signals, self.settings, self.rng)
+        energy = rapport.pick_energy(conv, signals, self.rng, prev=conv.last_energy)
+        self.store.update_rapport(conv.id, last_energy=energy)
 
         try:
             raw = await self.brain.chat(
@@ -84,7 +86,15 @@ class Engine:
                 summary=context.summary,
                 facts=context.facts,
                 display_name=conv.display_name,
-                rapport=rapport.describe(conv, self.settings, signals, budget),
+                rapport=rapport.describe(
+                    conv,
+                    self.settings,
+                    signals,
+                    budget,
+                    strengths=self.persona.strengths,
+                    energy=energy,
+                    goal=self.persona.goal or None,
+                ),
                 max_bubbles=budget,
             )
         except Exception:  # 不管哪裡壞了,使用者都該收到點東西
@@ -96,6 +106,16 @@ class Engine:
             budget,
             long_bubble_chars=self.persona.max_chars_per_bubble * 2,
             max_chars=self.persona.max_chars_per_bubble,
+        )
+        # 要在這則寫進資料庫之前看,不然會拿自己跟自己比。
+        her_recent = [
+            m.text for m in self.store.recent_messages(conv.id, limit=12) if m.role == "assistant"
+        ]
+        bubbles = tone_down(
+            bubbles,
+            her_recent,
+            emoji_gap=self.settings.emoji_gap,
+            strip_tilde=self.settings.strip_tilde,
         )
         if not bubbles:
             return Reply([])

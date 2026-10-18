@@ -147,6 +147,12 @@ class Settings:
     # 不像矜持,像當機。實測 90 秒的時候會以為機器人掛了。
     max_lead_delay: float = field(default_factory=lambda: _float("MAX_LEAD_DELAY", 25.0))
 
+    # 語氣收斂。提示詞裡寫「很少用表情符號」沒用,實測十二輪有八輪都帶表情,
+    # 看起來很油。所以由程式把關:最近幾則用過表情,這則就不用。0 = 不限制。
+    emoji_gap: int = field(default_factory=lambda: _int("EMOJI_GAP", 5))
+    # 拉長音的波浪號幾乎一定讀起來像在撒嬌,預設拿掉。
+    strip_tilde: bool = field(default_factory=lambda: _bool("STRIP_TILDE", True))
+
     # 擬真:拆泡泡、打字延遲
     max_bubbles: int = field(default_factory=lambda: _int("MAX_BUBBLES", 3))
     typing_indicator: bool = field(default_factory=lambda: _bool("TYPING_INDICATOR", True))

@@ -88,3 +88,76 @@ def test_rules_put_answering_him_before_talking_about_herself(persona):
     rules = persona.chat_rules(max_bubbles=2)
     assert "第一則先回答他問的" in rules
     assert "放不下就不要講" in rules
+
+
+
+def test_rules_tell_her_not_to_be_glib(persona):
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "不要油嘴滑舌" in rules
+    assert "語助詞一句最多一個" in rules
+
+
+def test_strengths_are_read_but_kept_out_of_the_card():
+    persona = Persona.from_dict({"name": "小葵", "strengths": ["很會挑書", "很會煮"]})
+    assert persona.strengths == ["很會挑書", "很會煮"]
+    assert "很會挑書" not in persona.system_prompt(3)
+
+
+def test_rules_forbid_inventing_shared_memories(persona):
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "記憶裡沒有的事,不要說成他講過" in rules
+    assert "不要主動約見面" in rules
+
+
+def test_rules_ask_for_varied_energy_and_frame_control(persona):
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "不要每則都同一個溫度" in rules
+
+
+def test_rules_allow_cold_reading_but_not_fortune_telling(persona):
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "你對他這個人的感覺" in rules
+    assert "不要假裝你能通靈" in rules
+
+
+def test_rules_forbid_inventing_concrete_facts(persona):
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "書名、作者、店名" in rules
+    assert "不要掰一個出來" in rules
+
+
+# ---- 對話目標、自訂段落、預覽 ----
+
+
+def test_goal_is_read_from_the_card():
+    persona = Persona.from_dict({"name": "小葵", "goal": "讓他願意固定找她聊"})
+    assert persona.goal == "讓他願意固定找她聊"
+
+
+def test_a_custom_section_becomes_a_card_section():
+    persona = Persona.from_dict({"name": "小葵", "交往經驗": ["談過兩次", "都不長"]})
+    card = persona.card()
+    assert "## 交往經驗" in card
+    assert "- 談過兩次" in card
+
+
+def test_a_custom_section_as_plain_text():
+    persona = Persona.from_dict({"name": "小葵", "愛情觀": "慢熱,看重誠實"})
+    assert "## 愛情觀\n慢熱,看重誠實" in persona.card()
+
+
+def test_a_custom_section_as_a_mapping():
+    persona = Persona.from_dict({"name": "小葵", "學歷": {"學校": "東華中文", "狀態": "已畢業"}})
+    card = persona.card()
+    assert "- 學校:東華中文" in card
+    assert "- 狀態:已畢業" in card
+
+
+def test_the_field_report_lists_filled_empty_and_custom():
+    persona = Persona.from_dict(
+        {"name": "小葵", "goal": "", "personality": ["話少"], "書": ["兒子的大玩偶"]}
+    )
+    report = {label: status for label, status, _ in persona.field_report()}
+    assert report["個性"] == "有"
+    assert report["對話目標"].startswith("—")
+    assert report["書（自訂）"] == "有"

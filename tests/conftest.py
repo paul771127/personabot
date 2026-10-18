@@ -60,7 +60,7 @@ class FakeBrain:
         self.merged_facts_to_return: list[str] | None = None
         self.merge_calls: list[list[str]] = []
         self.signals_to_return: tuple[dict, str] = (
-            {"asked_about_her": False, "warm": False, "probing": False},
+            {"asked_about_her": False, "warm": False, "probing": False, "challenged": False},
             "",
         )
         self.signal_calls: list[list[Message]] = []

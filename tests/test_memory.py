@@ -83,7 +83,7 @@ async def test_the_guessed_state_is_stored(settings, store, brain):
     store.add_message(conv.id, "assistant", "欸,你好")
     store.add_message(conv.id, "user", "今天好累")
     brain.signals_to_return = (
-        {"asked_about_her": False, "warm": False, "probing": False},
+        {"asked_about_her": False, "warm": False, "probing": False, "challenged": False},
         "剛下班很累,想被附和不想被建議",
     )
 
@@ -101,3 +101,15 @@ async def test_nothing_moves_when_rapport_is_off(settings, store, brain):
 
     assert store.get_conversation(conv.id).guard == 0
     assert brain.signal_calls == []
+
+
+async def test_the_stage_moves_up_in_the_background(settings, store, brain):
+    conv = store.get_or_create_conversation("cli", "1", "aoi")
+    for i in range(8):
+        store.add_message(conv.id, "user", f"今天第{i}件事")
+        store.add_message(conv.id, "assistant", "嗯嗯")
+    store.update_rapport(conv.id, interest=60, guard=0)
+
+    await _memory(settings, store, brain).maintain(conv.id)
+
+    assert store.get_conversation(conv.id).stage == 2

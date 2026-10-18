@@ -262,8 +262,16 @@ def test_strict_mode_keeps_every_bubble_under_the_limit():
 
 
 def test_strict_mode_packs_short_sentences_together():
-    """「嗯。」「好。」這種短句不該各自佔一則。"""
-    assert split_bubbles("嗯。好。那你呢?", 2, max_chars=20) == ["嗯。好。那你呢?"]
+    """「嗯。」「好。」這種短句不該各自佔一則;但這輪能回兩則,就不要硬擠成一則。"""
+    assert split_bubbles("嗯。好。那你呢?", 2, max_chars=20) == ["嗯。好。", "那你呢?"]
+    assert split_bubbles("嗯。好。那你呢?", 1, max_chars=20) == ["嗯。好。那你呢?"]
+
+
+def test_two_sentences_on_one_line_become_two_bubbles_when_the_budget_allows():
+    """實測十二輪只有一輪回兩則:兩句加起來沒超過字數,就被併成一則了。"""
+    raw = "太惡心了啦，那是甩鍋欸…快關門躲一下？"
+    assert split_bubbles(raw, 2, max_chars=20) == ["太惡心了啦，那是甩鍋欸…", "快關門躲一下？"]
+    assert split_bubbles(raw, 1, max_chars=20) == [raw]
 
 
 def test_strict_mode_drops_what_does_not_fit_instead_of_cramming():
@@ -341,3 +349,109 @@ def test_a_trailing_interjection_is_not_left_hanging():
 def test_an_interjection_goes_with_the_sentence_after_it():
     bubbles = split_bubbles("嗯。\n欸...你今天吃了嗎", 2, max_chars=20)
     assert bubbles == ["嗯。欸...你今天吃了嗎"] or bubbles[-1].startswith("欸...你今天")
+
+
+
+# ---- 語氣收斂 ----
+
+
+def test_only_one_emoji_survives_per_reply():
+    from personabot.bubbles import tone_down
+
+    assert tone_down(["慘啦😂 太常發生了 🙃", "嗯 😂"], []) == ["慘啦😂 太常發生了", "嗯"]
+
+
+def test_no_emoji_when_she_used_one_recently():
+    """角色卡寫「一天用不到三次」,實測十二輪有八輪都帶表情。"""
+    from personabot.bubbles import tone_down
+
+    recent = ["剛下班", "校稿又踩鍵盤了 🙃", "嗯"]
+    assert tone_down(["你快去睡吧 😂"], recent, emoji_gap=5) == ["你快去睡吧"]
+
+
+def test_emoji_comes_back_after_enough_plain_replies():
+    from personabot.bubbles import tone_down
+
+    recent = ["校稿又踩鍵盤了 🙃", "嗯", "好", "是喔", "對啊", "晚安"]
+    assert tone_down(["哈哈 😂"], recent, emoji_gap=5) == ["哈哈 😂"]
+
+
+def test_the_drawn_out_tilde_is_removed():
+    from personabot.bubbles import tone_down
+
+    assert tone_down(["香喔\uff5e", "哈哈\uff5e\uff5e那我先去煮茶"], []) == ["香喔", "哈哈那我先去煮茶"]
+
+
+def test_a_bubble_that_was_only_an_emoji_disappears():
+    from personabot.bubbles import tone_down
+
+    assert tone_down(["好啊", "😂"], ["🙃"]) == ["好啊"]
+
+
+def test_everything_can_be_switched_off():
+    from personabot.bubbles import tone_down
+
+    assert tone_down(["好喔\uff5e😂🙃"], ["🙃"], emoji_gap=0, strip_tilde=False) == ["好喔\uff5e😂🙃"]
+
+
+async def test_the_bubble_count_reaches_the_real_prompt(settings, persona):
+    """從 engine 一路到真的 brain:這輪抽到的則數要出現在送給模型的 prompt 裡。"""
+    import random
+
+    from personabot.brain import Brain
+
+    class _Capture:
+        name = "capture"
+
+        def __init__(self):
+            self.prompts = []
+
+        async def complete(self, prompt, model):
+            self.prompts.append(prompt)
+            return "嗯。"
+
+        async def aclose(self): ...
+
+    backend = _Capture()
+    brain = Brain(settings=settings, backend=backend)
+    engine = _engine(settings, persona, brain)
+    engine.rng = random.Random(0)
+    await engine.handle(_msg("今天去公館"))
+
+    chat_prompt = backend.prompts[0]
+    assert "你跟他現在的關係" in chat_prompt.dynamic_system
+    assert "這次回" in chat_prompt.dynamic_system
+
+
+async def test_the_stage_and_strengths_reach_the_real_prompt(settings, persona):
+    from dataclasses import replace as dc_replace
+
+    from personabot.brain import Brain
+
+    class _Capture:
+        name = "capture"
+
+        def __init__(self):
+            self.prompts = []
+
+        async def complete(self, prompt, model):
+            self.prompts.append(prompt)
+            return "嗯。"
+
+        async def aclose(self): ...
+
+    store = Store(":memory:")
+    backend = _Capture()
+    proud = dc_replace(persona, strengths=["很會挑書"])
+    engine = _engine(settings, proud, Brain(settings=settings, backend=backend), store)
+
+    await engine.handle(_msg("嗨"))
+    first = backend.prompts[0].dynamic_system
+    assert "第 1 階段" in first
+    assert "很會挑書" not in first
+
+    conv = store.get_or_create_conversation("cli", "u1", persona.id)
+    store.update_rapport(conv.id, stage=3)
+    await engine.handle(_msg("今天去公館"))
+    later = [p for p in backend.prompts if "第 3 階段" in p.dynamic_system]
+    assert later and "很會挑書" in later[-1].dynamic_system

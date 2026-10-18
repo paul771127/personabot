@@ -271,3 +271,155 @@ def test_being_probed_makes_her_relax_not_go_cold(settings):
     assert "不要防衛" in text
     assert "話可以短一點" not in text
     assert "拉回他身上" in text
+
+
+# ---- 關係階段 ----
+
+
+def test_everyone_starts_at_the_opening():
+    assert rapport.next_stage(1, his_messages=2, interest=50, guard=0) == 1
+
+
+def test_enough_easy_chat_moves_to_familiar():
+    assert rapport.next_stage(1, his_messages=8, interest=55, guard=10) == 2
+
+
+def test_not_while_he_is_still_wary():
+    assert rapport.next_stage(1, his_messages=30, interest=90, guard=35) == 1
+
+
+def test_familiar_moves_to_attraction_only_when_it_is_going_really_well():
+    assert rapport.next_stage(2, his_messages=25, interest=75, guard=10) == 3
+    assert rapport.next_stage(2, his_messages=25, interest=60, guard=10) == 2  # 還不夠熱
+    assert rapport.next_stage(2, his_messages=10, interest=95, guard=0) == 2  # 聊得還不夠久
+
+
+def test_no_skipping_stages():
+    """就算一開始數字就很好看,也要一階一階來。"""
+    assert rapport.next_stage(1, his_messages=100, interest=100, guard=0) == 2
+
+
+def test_heavy_probing_steps_back():
+    assert rapport.next_stage(3, his_messages=50, interest=90, guard=55) == 2
+
+
+def test_cooling_off_steps_back():
+    assert rapport.next_stage(2, his_messages=50, interest=30, guard=0) == 1
+
+
+def test_the_opening_never_goes_lower():
+    assert rapport.next_stage(1, his_messages=50, interest=0, guard=100) == 1
+
+
+def test_each_stage_has_its_own_guidance(settings):
+    opening = rapport.describe(_conv(stage=1), settings)
+    familiar = rapport.describe(_conv(stage=2), settings)
+    attraction = rapport.describe(_conv(stage=3), settings)
+    assert "開場" in opening and "不設防" in opening
+    assert "熟悉" in familiar and "分享你的日常" in familiar
+    assert "吸引" in attraction and "不是那句話的重點" in attraction
+
+
+def test_strengths_only_show_up_at_the_attraction_stage(settings):
+    """前兩階段連「自己有什麼優點」都不給她看,她就不會從第一句開始自我推銷。"""
+    strengths = ["很會挑書"]
+    assert "很會挑書" not in rapport.describe(_conv(stage=1), settings, strengths=strengths)
+    assert "很會挑書" not in rapport.describe(_conv(stage=2), settings, strengths=strengths)
+    assert "很會挑書" in rapport.describe(_conv(stage=3), settings, strengths=strengths)
+
+
+def test_the_opening_warns_against_getting_too_close_too_fast(settings):
+    assert "現在都還太早" in rapport.describe(_conv(stage=1), settings)
+
+
+def test_familiar_callbacks_are_limited_to_real_memories(settings):
+    assert "只限記憶裡有的" in rapport.describe(_conv(stage=2), settings)
+
+
+# ---- 回挑釁:不接前提,不貶低 ----
+
+
+def test_a_dismissive_message_is_flagged(settings):
+    for text in ("就這樣喔?", "你是不是想追我", "你以為我會喜歡你", "你有什麼了不起"):
+        assert rapport.read_message(text, 0, settings).challenged, text
+
+
+def test_an_ordinary_question_is_not_a_challenge(settings):
+    assert not rapport.read_message("你今天在幹嘛", 0, settings).challenged
+
+
+def test_being_challenged_tells_her_not_to_supplicate_or_belittle(settings):
+    sig = rapport.read_message("你是不是想追我", 0, settings)
+    text = rapport.describe(_conv(interest=60), settings, sig)
+    assert "不要順著這個前提" in text and "不要討好" in text
+    assert "不要貶低他" in text  # 不接前提,但也不反過來酸
+
+
+def test_no_challenge_line_when_he_is_normal(settings):
+    sig = rapport.read_message("今天去爬山", 0, settings)
+    assert "頂回去" not in rapport.describe(_conv(), settings, sig)
+
+
+# ---- 情感過山車 ----
+
+
+def test_energy_does_not_repeat_the_previous_turn(settings):
+    import random
+
+    rng = random.Random(0)
+    prev = "普"
+    for _ in range(20):
+        e = rapport.pick_energy(_conv(interest=60), None, rng, prev=prev)
+        assert e != prev
+        prev = e
+
+
+def test_energy_stays_calm_when_he_is_down(settings):
+    import random
+
+    conv = _conv(read_state="他剛下班很累,心情低落")
+    rng = random.Random(0)
+    picks = {rapport.pick_energy(conv, None, rng, prev="") for _ in range(30)}
+    assert "起勁" not in picks
+
+
+def test_energy_is_steady_when_he_is_caring_or_challenging(settings):
+    import random
+
+    rng = random.Random(0)
+    warm = rapport.read_message("你還好嗎", 0, settings)
+    warm.warm = True
+    assert rapport.pick_energy(_conv(), warm, rng, prev="平") == "普"
+    chall = rapport.read_message("你是不是想追我", 0, settings)
+    assert rapport.pick_energy(_conv(), chall, rng, prev="平") == "普"
+
+
+def test_the_energy_line_is_in_the_prompt(settings):
+    assert "放淡" in rapport.describe(_conv(), settings, energy="平")
+    assert "起勁" in rapport.describe(_conv(), settings, energy="起勁")
+
+
+# ---- 冷讀只在熟了之後 ----
+
+
+def test_cold_reading_is_not_offered_in_the_opening(settings):
+    assert "看起來" not in rapport.describe(_conv(stage=1), settings)
+
+
+def test_cold_reading_shows_up_once_familiar(settings):
+    familiar = rapport.describe(_conv(stage=2), settings)
+    assert "看起來" in familiar and "用猜的語氣" in familiar
+
+
+def test_a_custom_goal_replaces_the_default(settings):
+    text = rapport.describe(_conv(), settings, goal="讓他願意固定找她聊")
+    assert "讓他願意固定找她聊" in text
+    assert "愈聊愈開心" not in text
+
+
+def test_the_default_goal_is_used_when_none_given(settings):
+    assert "愈聊愈開心" in rapport.describe(_conv(), settings)
+
+
+def test_the_goal_says_not_to_be_obvious_about_it(settings):
+    assert "不要讓他看出" in rapport.describe(_conv(), settings)

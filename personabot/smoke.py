@@ -70,7 +70,11 @@ async def run_smoke(engine: Engine) -> int:
     if engine.settings.rapport:
         fresh = engine.store.get_conversation(conv.id)
         if fresh:
-            print(f"\n關係狀態:興趣度 {fresh.interest}/100、戒心 {fresh.guard}/100")
+            stage = {1: "開場", 2: "熟悉", 3: "吸引"}.get(fresh.stage, "?")
+            print(
+                f"\n關係狀態:第 {fresh.stage} 階段({stage})、"
+                f"興趣度 {fresh.interest}/100、戒心 {fresh.guard}/100"
+            )
             if fresh.read_state:
                 print(f"它猜你現在:{fresh.read_state}")
 

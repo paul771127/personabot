@@ -79,9 +79,12 @@ class Memory:
         signals.asked_about_her = signals.asked_about_her or flags["asked_about_her"]
         signals.warm = signals.warm or flags["warm"]
         signals.probing = signals.probing or flags["probing"]
+        signals.challenged = signals.challenged or flags["challenged"]
 
         interest = rapport.next_interest(conv.interest, signals, self.settings, last_user.text)
         guard, quiet = rapport.next_guard(conv.guard, conv.quiet_turns, signals, self.settings)
+        his_messages = self.store.count_messages(conversation_id, role="user")
+        stage = rapport.next_stage(conv.stage, his_messages, interest, guard)
 
         self.store.update_rapport(
             conversation_id,
@@ -89,7 +92,10 @@ class Memory:
             guard=guard,
             quiet_turns=quiet,
             read_state=state or conv.read_state,
+            stage=stage,
         )
+        if stage != conv.stage:
+            log.info("conversation=%s 關係階段 %d->%d", conversation_id, conv.stage, stage)
         if (interest, guard) != (conv.interest, conv.guard):
             log.info(
                 "conversation=%s 興趣度 %d->%d,戒心 %d->%d",

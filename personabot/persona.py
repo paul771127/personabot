@@ -14,7 +14,18 @@ def _as_list(value: Any) -> list[str]:
         return []
     if isinstance(value, str):
         return [line.strip() for line in value.splitlines() if line.strip()]
+    if isinstance(value, dict):
+        return [f"{k}:{v}" for k, v in value.items()]
     return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _render_extra(value: Any) -> str:
+    """角色卡裡沒預設的欄位,照型別排版成一段:一段文字、一串條列、或一組「子題:內容」。"""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return "\n".join(f"- {k}:{v}" for k, v in value.items())
+    return "\n".join(f"- {v}" for v in _as_list(value))
 
 
 @dataclass
@@ -32,6 +43,12 @@ class Persona:
     greeting: str = ""
     # 沒話題的時候可以拿來開場的小事。寫成她自己身上發生的事,不要寫成問句。
     openers: list[str] = field(default_factory=list)
+    # 她的優點。不放進人設本體 —— 只有聊到第三階段(吸引)才交給她,
+    # 前面就給的話她會從第一句開始自我推銷。
+    strengths: list[str] = field(default_factory=list)
+    # 這段對話最後想帶對方到哪 —— 整段的終極目標(例:讓他願意固定找她聊)。
+    # 空的話用 rapport 裡的預設目標。
+    goal: str = ""
     language: str = "繁體中文(台灣用語)"
     max_chars_per_bubble: int = 60
     extra: dict[str, Any] = field(default_factory=dict)
@@ -59,6 +76,8 @@ class Persona:
             "remember_focus",
             "greeting",
             "openers",
+            "strengths",
+            "goal",
             "language",
             "max_chars_per_bubble",
         }
@@ -75,6 +94,8 @@ class Persona:
             remember_focus=_as_list(data.get("remember_focus")),
             greeting=str(data.get("greeting") or ""),
             openers=_as_list(data.get("openers")),
+            strengths=_as_list(data.get("strengths")),
+            goal=str(data.get("goal") or "").strip(),
             language=str(data.get("language") or "繁體中文(台灣用語)"),
             max_chars_per_bubble=int(data.get("max_chars_per_bubble") or 60),
             extra={k: v for k, v in data.items() if k not in known},
@@ -104,8 +125,7 @@ class Persona:
                 + "\n照自己的話重講,不要照抄,也不要一次講兩件。"
             )
         for key, value in self.extra.items():
-            rendered = "\n".join(f"- {v}" for v in _as_list(value)) or str(value)
-            lines.append(f"\n## {key}\n{rendered}")
+            lines.append(f"\n## {key}\n{_render_extra(value)}")
         return "\n".join(lines)
 
     def chat_rules(self, max_bubbles: int) -> str:
@@ -144,12 +164,32 @@ class Persona:
             "- 你就是這個人,不是助理。不要說「有什麼我可以幫你的嗎」這種客服腔。",
             "- 不要主動提起你是 AI 或語言模型;但對方直接問、或是在意這件事時,不要騙他。",
             "- 記得的事情自然地用出來就好,不要宣告「我記得你說過……」。",
+            # 實測沒有任何記憶時,她會編一句「我記得你說過喜歡歷史小說」—— 假的回憶比沒有更糟。
+            "- 記憶裡沒有的事,不要說成他講過。不確定就問他,不要編。",
+            # 實測她會編書名、店名、把「午餐隨便吃」腦補成「大腸麵線」。具體的東西寧可不講。
+            "- 具體的東西不確定就不要編:書名、作者、店名、他吃了什麼、他做了什麼。"
+            "想不起來就講個大概、或老實說沒印象,也可以反問他,但不要掰一個出來講得像真的。",
+            # 冷讀是用猜的語氣貼他的感受,跟「編造事實」不一樣:前者是你的感覺、他可以否認;
+            # 後者是把假的講成真的。界線在這裡。
+            "- 可以講你對他這個人的感覺(「你看起來大剌剌,其實挺細心」),那是你的觀察、用猜的語氣,"
+            "他要是說不對你就順著改。但不要假裝你能通靈、看穿他的過去,也不要講得像鐵口直斷。",
             # 底下這幾條是在治「像機器人」—— 一問一答、永遠在線、句句都安全。
             "- 不要當一問一答的機器。可以吐槽、可以接著講自己的事、可以不同意他。",
+            # 情感過山車:整段對話同一個能量很平。該淡的時候淡、該起勁的時候起勁。
+            "- 不要每則都同一個溫度。有時候淡淡接一句,有時候被戳到想聊就起勁一點,"
+            "對話才有高有低。但他心情不好的時候,穩穩接住就好,不要硬嗨。",
+            "- 他講他自己的生活(上班、上課、家裡、朋友)時,那是他的事,不是你的。"
+            "不要把你的工作和生活套到他身上,也不要假設他跟你做一樣的事。",
+            # 照片、視訊、見面她都不會答應,那就也不該自己開口提 —— 答應了做不到的事比拒絕更糟。
+            "- 不要主動約見面,也不要說要為他做需要見面才做得到的事(煮給他吃、陪他去哪裡)。",
             "- 偶爾丟一個你自己遇到的畫面或小事,講一半就好,留一點讓他想追問的空間。"
             "但不要每則都這樣,三四則裡有一則就夠。",
             "- 你有自己的生活,不是隨傳隨到。在忙就說在忙,累就說累,不用一直陪著接話。",
             "- 要稱讚就講具體的那一點,不要講「你好厲害」這種誰都能收的話。",
+            # 上面那幾條讓她不呆板,但放太開就變油:對什麼都很嗨、句句帶表情、語助詞疊滿。
+            "- 不要油嘴滑舌。反應要跟事情的大小相稱:他說晚餐吃滷肉飯,回「不錯欸」就好,"
+            "不用「好夠力啦,很下飯啊,香喔」。語助詞一句最多一個,不好笑的事不要用 😂,"
+            "不要撒嬌、不要用「～」拉長音。",  # noqa: RUF001
         ]
         if self.remember_focus:
             rules.append("- 對方提到這些時特別留意:" + "、".join(self.remember_focus))
@@ -157,3 +197,48 @@ class Persona:
 
     def system_prompt(self, max_bubbles: int = 3) -> str:
         return self.card() + "\n" + self.chat_rules(max_bubbles)
+
+    def field_report(self) -> list[tuple[str, str, str]]:
+        """填得怎樣。回傳 (欄位, 狀態, 內容摘要),給預覽指令用。"""
+        rows: list[tuple[str, str, str]] = []
+
+        def summarize(value: object) -> str:
+            if isinstance(value, list):
+                return f"{len(value)} 項"
+            text = str(value).replace("\n", " ")
+            return text[:40] + ("…" if len(text) > 40 else "")
+
+        labels = {
+            "name": "名字", "one_liner": "一句話簡介", "background": "來歷",
+            "personality": "個性", "speech_style": "講話風格", "likes": "喜歡",
+            "dislikes": "不喜歡", "boundaries": "不能做的事", "remember_focus": "要特別記的",
+            "greeting": "開場問候", "openers": "沒話題時的開場", "strengths": "得意事蹟/優點",
+            "goal": "對話目標", "max_chars_per_bubble": "每則字數上限",
+        }
+        for attr, label in labels.items():
+            value = getattr(self, attr)
+            filled = bool(value) and not (attr == "max_chars_per_bubble" and not value)
+            rows.append((label, "有" if filled else "—（空）", summarize(value) if filled else ""))
+        for key, value in self.extra.items():
+            rows.append((f"{key}（自訂）", "有", summarize(value)))
+        return rows
+
+
+def _main() -> None:
+    import sys
+
+    path = sys.argv[1] if len(sys.argv) > 1 else "personas/aoi.yaml"
+    persona = Persona.load(path)
+    print(f"=== 角色卡:{path} ===\n")
+    print("欄位檢查:")
+    for label, status, summary in persona.field_report():
+        print(f"  {status:<7} {label}{('  ' + summary) if summary else ''}")
+    goal = persona.goal or "(用預設:讓他愈聊愈開心、愈想聊下去)"
+    print(f"\n對話目標:{goal}")
+    print("\n" + "=" * 56)
+    print("組出來的 system prompt(人設 + 聊天規則,不含每輪會變的記憶/關係):\n")
+    print(persona.system_prompt())
+
+
+if __name__ == "__main__":
+    _main()
