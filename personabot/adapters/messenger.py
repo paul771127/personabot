@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..types import InboundMessage, Reply
-from .base import Adapter, header, pace
+from .base import Adapter, header, lead_pause, pace
 
 MAX_TEXT_LENGTH = 1950  # 官方上限 2000
 
@@ -61,8 +61,11 @@ class MessengerAdapter(Adapter):
         return out
 
     async def send(self, inbound: InboundMessage, reply: Reply) -> None:
+        await lead_pause(reply)
         for index, bubble in enumerate(reply.bubbles):
-            if index > 0:
+            # 等過之後一定要再顯示一次「輸入中」。靜默完直接跳出訊息很突兀,
+            # 而且等待期間對方看不到任何動靜,會以為機器人掛了。
+            if index > 0 or reply.lead_delay > 0:
                 await self.show_typing(inbound)
                 await pace(self.settings, bubble)
             await self._post(

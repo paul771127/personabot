@@ -77,6 +77,19 @@ def typing_delay(text: str, settings: Settings) -> float:
     return min(len(text) / settings.typing_speed_cps, settings.max_typing_delay)
 
 
+async def lead_pause(reply: Reply, cap: float | None = None) -> None:
+    """送第一則之前先等一下 —— 對方晾你多久,就大致晾回去。
+
+    秒數是 engine 照興趣度和對方的回覆間隔算好的,而且已經扣掉模型生成花的時間。
+    cap 給 LINE 用:它的 reply token 一分鐘就過期,等太久就送不出去了。
+    """
+    delay = reply.lead_delay
+    if cap is not None:
+        delay = min(delay, cap)
+    if delay > 0:
+        await asyncio.sleep(delay)
+
+
 async def pace(settings: Settings, text: str) -> None:
     """送下一則泡泡之前先停一下,像在打字。"""
     delay = typing_delay(text, settings)

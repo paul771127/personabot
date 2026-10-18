@@ -29,6 +29,8 @@ class Reply:
     """要回出去的內容,拆成數個泡泡比較像真人。"""
 
     bubbles: list[str]
+    # 送第一則之前先等這麼久。對方晾你多久,就大致晾回去 —— 秒回顯得太閒。
+    lead_delay: float = 0.0
 
     def __post_init__(self) -> None:
         self.bubbles = [b.strip() for b in self.bubbles if b and b.strip()]

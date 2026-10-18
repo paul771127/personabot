@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 from ..types import InboundMessage, Reply
-from .base import Adapter, header
+from .base import Adapter, header, lead_pause
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ class LineAdapter(Adapter):
         return out
 
     async def send(self, inbound: InboundMessage, reply: Reply) -> None:
+        await lead_pause(reply, cap=30.0)
         messages = [
             {"type": "text", "text": b[:MAX_TEXT_LENGTH]}
             for b in reply.bubbles[:MAX_MESSAGES_PER_REPLY]

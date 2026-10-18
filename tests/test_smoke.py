@@ -74,12 +74,12 @@ def test_missing_long_term_memory_is_caught(engine):
 
 
 def test_長度上限跟著角色卡走(engine):
-    """角色卡說一則 30 字,80 字就該被抓;預設 60 字則不該。"""
+    """角色卡說一則 30 字,80 字就該被抓;放寬到 100 字則不該。現在是一則一則量的硬上限。"""
     replies = _clean_replies()
     replies[4] = "欸" * 80
 
     engine.persona = replace(engine.persona, max_chars_per_bubble=30)
     assert any("講太長" in line for ok, line in _check(replies, ["阿明"], engine) if not ok)
 
-    engine.persona = replace(engine.persona, max_chars_per_bubble=60)
+    engine.persona = replace(engine.persona, max_chars_per_bubble=100)
     assert not any("講太長" in line for ok, line in _check(replies, ["阿明"], engine) if not ok)

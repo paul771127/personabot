@@ -12,7 +12,8 @@ from personabot.store import Message, Store
 # os.environ,測試結果就跟著那台機器的設定跑。每個測試前清掉,要什麼自己設。
 _ENV_PREFIXES = (
     "LLM_BACKEND", "ANTHROPIC_", "CHAT_", "UTILITY_", "MAX_", "PERSONA_", "DB_PATH",
-    "WINDOW_", "SUMMARIZE_", "TYPING_", "RATE_LIMIT_", "LOCAL_",
+    "WINDOW_", "SUMMARIZE_", "TYPING_", "RATE_LIMIT_", "LOCAL_", "MERGE_", "RAPPORT", "FAST_REPLY_", "SLOW_REPLY_",
+    "COLD_REPLY_", "GUARD_", "MAX_LEAD_",
     "LINE_", "MESSENGER_", "TELEGRAM_",
 )
 
@@ -55,14 +56,33 @@ class FakeBrain:
         self.facts_to_return: list[str] = []
         self.last_assistant_name: str | None = None
         self.summary_to_return = "摘要"
+        # None = 不動它,照傳進來的原樣回去。
+        self.merged_facts_to_return: list[str] | None = None
+        self.merge_calls: list[list[str]] = []
+        self.signals_to_return: tuple[dict, str] = (
+            {"asked_about_her": False, "warm": False, "probing": False},
+            "",
+        )
+        self.signal_calls: list[list[Message]] = []
 
-    async def chat(self, persona, history, summary="", facts=None, display_name=None):
+    async def chat(
+        self,
+        persona,
+        history,
+        summary="",
+        facts=None,
+        display_name=None,
+        rapport="",
+        max_bubbles=None,
+    ):
         self.chat_calls.append(
             {
                 "history": list(history),
                 "summary": summary,
                 "facts": list(facts or []),
                 "display_name": display_name,
+                "rapport": rapport,
+                "max_bubbles": max_bubbles,
             }
         )
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
@@ -78,6 +98,19 @@ class FakeBrain:
     ) -> str:
         self.last_assistant_name = assistant_name
         return self.summary_to_return
+
+    async def read_signals(
+        self, messages: list[Message], assistant_name: str = "機器人"
+    ) -> tuple[dict, str]:
+        self.signal_calls.append(list(messages))
+        flags, state = self.signals_to_return
+        return dict(flags), state
+
+    async def merge_facts(self, facts: list[str]) -> list[str]:
+        self.merge_calls.append(list(facts))
+        if self.merged_facts_to_return is None:
+            return list(facts)
+        return list(self.merged_facts_to_return)
 
 
 @pytest.fixture

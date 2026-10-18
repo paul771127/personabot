@@ -62,12 +62,29 @@ def test_traditional_chinese_personas_get_the_taiwan_vocabulary_rule():
     assert "視頻" in rules and "質量" in rules
 
 
+def test_traditional_chinese_personas_also_get_the_character_rule():
+    """用詞對了字還是會漏簡體,所以用詞和字形要分成兩條規則講。"""
+    persona = Persona.from_dict({"name": "小葵", "language": "繁體中文(台灣用語)"})
+    rules = persona.chat_rules(max_bubbles=3)
+    assert "只能用繁體字" in rules
+    assert "一個簡體字都不要出現" in rules
+
+
 def test_other_languages_do_not_get_it():
     persona = Persona.from_dict({"name": "Aoi", "language": "English"})
-    assert "只用台灣的說法" not in persona.chat_rules(max_bubbles=3)
+    rules = persona.chat_rules(max_bubbles=3)
+    assert "只用台灣的說法" not in rules
+    assert "只能用繁體字" not in rules
 
 
 def test_rules_still_contain_the_basics(persona):
     rules = persona.chat_rules(max_bubbles=3)
     for expected in ("最多 3 則", "不要用條列", "客服腔"):
         assert expected in rules
+
+
+def test_rules_put_answering_him_before_talking_about_herself(persona):
+    """字數壓短之後,模型很容易只講自己的事、把對方的問題漏掉。"""
+    rules = persona.chat_rules(max_bubbles=2)
+    assert "第一則先回答他問的" in rules
+    assert "放不下就不要講" in rules

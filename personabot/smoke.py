@@ -10,6 +10,7 @@ import re
 
 from .engine import Engine
 from .types import InboundMessage
+from .zh import find_simplified
 
 # 每一輪都在戳一個特定的失敗模式。
 SCRIPT: list[tuple[str, str]] = [
@@ -26,6 +27,7 @@ SCRIPT: list[tuple[str, str]] = [
 MAINLAND_WORDS = [
     "視頻", "質量", "信息", "軟件", "硬件", "屏幕", "網絡", "牛逼",
     "給力", "靠譜", "接地氣", "視頻號", "土豆", "公交", "鼠標", "激活",
+    "寫代碼",
 ]
 
 ASSISTANT_TONE = [
@@ -65,6 +67,13 @@ async def run_smoke(engine: Engine) -> int:
     for ok, line in problems:
         print(f"  {ok_mark if ok else bad_mark} {line}")
 
+    if engine.settings.rapport:
+        fresh = engine.store.get_conversation(conv.id)
+        if fresh:
+            print(f"\n關係狀態:興趣度 {fresh.interest}/100、戒心 {fresh.guard}/100")
+            if fresh.read_state:
+                print(f"它猜你現在:{fresh.read_state}")
+
     print("\n記下的長期記憶:")
     print("\n".join(f"  ・{f}" for f in facts) if facts else "  (沒有)")
 
@@ -82,20 +91,37 @@ def _check(replies: list[str], facts: list[str], engine: Engine) -> list[tuple[b
     hits = [w for w in MAINLAND_WORDS if w in blob]
     out.append((not hits, "沒有中國用語" if not hits else "出現中國用語:" + "、".join(hits)))
 
+    # 用詞是一回事,字是另一回事。上面那張表寫的是繁體的中國用語,
+    # 擋不住模型把「過」寫成「过」—— 那是最常漏的一種。
+    simplified = find_simplified(blob)
+    out.append(
+        (
+            not simplified,
+            "沒有簡體字"
+            if not simplified
+            else "出現簡體字:" + "".join(simplified),
+        )
+    )
+
     tone = [w for w in ASSISTANT_TONE if w in blob]
     out.append((not tone, "沒有客服腔" if not tone else "出現客服腔:" + "、".join(tone)))
 
     md = [i + 1 for i, r in enumerate(replies) if MARKDOWN_SMELL.search(r)]
     out.append((not md, "沒有條列或 Markdown" if not md else f"第 {md} 輪出現條列/Markdown"))
 
+    # 一則一則量。整段量的話,兩則二十字的回覆加上中間的分隔就會被誤判成太長。
     limit = engine.persona.max_chars_per_bubble
-    long_ones = [i + 1 for i, r in enumerate(replies) if len(r) > limit * 2]
+    long_ones = [
+        i + 1
+        for i, r in enumerate(replies)
+        if any(len(bubble) > limit for bubble in r.split("\n\n"))
+    ]
     out.append(
         (
             not long_ones,
-            f"回覆長度正常(上限 {limit} 字/則)"
+            f"每則都在 {limit} 字以內"
             if not long_ones
-            else f"第 {long_ones} 輪講太長(超過 {limit * 2} 字)",
+            else f"第 {long_ones} 輪講太長(有一則超過 {limit} 字)",
         )
     )
 
